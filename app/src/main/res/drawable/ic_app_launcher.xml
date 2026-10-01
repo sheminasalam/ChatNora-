@@ -1,0 +1,58 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <!-- Outer White Halo / Bubble Border -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M256,40 C136.7,40 40,136.7 40,256 C40,296.8 51.5,334.9 71.3,367.4 L46,458.8 L141.1,434 C173.3,452.1 210.6,462.4 250.4,462.5 C252.3,462.5 254.1,462.5 256,462.5 C375.3,462.5 472,365.8 472,246.5 C472,127.2 375.3,40 256,40 Z" />
+
+    <!-- Vibrant Green Speech Bubble -->
+    <path
+        android:fillColor="#25D366"
+        android:pathData="M256,58 C146.6,58 58,146.6 58,256 C58,293.4 68.6,328.3 86.7,358.1 L64.8,436.8 L146.5,415.5 C176.1,432 210.2,441.5 246.6,441.6 C248.4,441.6 250,441.6 251.8,441.6 C361.2,441.6 449.8,353 449.8,243.6 C449.8,134.2 361.2,58 256,58 Z" />
+
+    <!-- Inner Green Gradient Accent / Depth Layer -->
+    <path
+        android:fillColor="#1DA851"
+        android:pathData="M256,58 C146.6,58 58,146.6 58,256 C58,266.2 58.8,276.1 60.3,285.8 C68.2,387.8 152.8,441.6 251.8,441.6 C361.2,441.6 449.8,353 449.8,243.6 C449.8,220.1 445.6,197.6 438,176.8 C411.4,107.6 340.2,58 256,58 Z" />
+
+    <!-- Top Curved Exchange Arrow (pointing towards A) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M260,145 C305,145 348,168 375,202 L350,212 L405,232 L405,172 L385,188 C354,148 308,124 258,124 C235,124 212,129 192,138 L203,158 C220,150 240,145 260,145 Z" />
+
+    <!-- Bottom Curved Exchange Arrow (pointing towards 文) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M252,367 C207,367 164,344 137,310 L162,300 L107,280 L107,340 L127,324 C158,364 204,388 254,388 C277,388 300,383 320,374 L309,354 C292,362 272,367 252,367 Z" />
+
+    <!-- Universal Translation Character '文' (Wen) -->
+    <!-- Top Dot / Head -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M182,160 L204,160 C206,175 204,192 196,204 L178,198 C182,188 184,175 182,160 Z" />
+
+    <!-- Horizontal Bar -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M124,204 L258,204 L258,225 L124,225 Z" />
+
+    <!-- Left Slanted Stroke (Pie) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M198,225 C190,265 168,305 125,335 L110,318 C148,292 170,258 178,225 Z" />
+
+    <!-- Right Slanted Stroke (Na) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M165,248 L184,235 C202,265 228,298 266,326 L250,342 C210,310 182,275 165,248 Z" />
+
+    <!-- Bold White English Letter 'A' -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M344,182 L320,335 L342,335 L350,285 L392,285 L400,335 L422,335 L398,182 L376,182 Z M354,266 L371,212 L388,266 L354,266 Z" />
+
+</vector>
