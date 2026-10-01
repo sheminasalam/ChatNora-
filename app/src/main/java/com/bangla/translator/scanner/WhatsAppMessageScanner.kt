@@ -5,6 +5,7 @@ import android.os.Build
 import android.view.accessibility.AccessibilityNodeInfo
 import com.bangla.translator.data.ScannedMessage
 import com.bangla.translator.translation.BengaliDetector
+import com.bangla.translator.translation.LanguageDetector
 import java.util.ArrayDeque
 import java.util.regex.Pattern
 

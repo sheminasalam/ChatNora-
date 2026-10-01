@@ -1,12 +1,12 @@
 <resources>
-    <string name="app_name">Universal WhatsApp Translator</string>
-    <string name="accessibility_service_label">Universal WhatsApp Translator Service</string>
-    <string name="accessibility_service_description">Reads foreign language messages inside WhatsApp and WhatsApp Business conversations to display instant on-device translations. 100% private, messages never leave your phone.</string>
+    <string name="app_name">ChatNora</string>
+    <string name="accessibility_service_label">ChatNora Accessibility Service</string>
+    <string name="accessibility_service_description">ChatNora detects foreign language messages inside WhatsApp and WhatsApp Business conversations to display instant on-device translations. 100% private, messages never leave your phone.</string>
     
     <!-- UI Strings -->
     <string name="title_status">Service Status</string>
-    <string name="accessibility_status_enabled">Accessibility Service is Active</string>
-    <string name="accessibility_status_disabled">Accessibility Service is Disabled</string>
+    <string name="accessibility_status_enabled">ChatNora Service is Active</string>
+    <string name="accessibility_status_disabled">ChatNora Service is Disabled</string>
     <string name="btn_enable_accessibility">Configure Accessibility</string>
     
     <string name="title_model">Translation Engine (On-Device ML Kit)</string>

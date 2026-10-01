@@ -122,7 +122,7 @@ object TranslationEngine {
             return existingTask
         }
 
-        _modelState.value = ModelDownloadState.Downloading(0)
+        _modelState.value = ModelDownloadState.Downloading
         isPreparingModel.set(true)
 
         val translator = getOrCreateTranslator()
@@ -159,6 +159,11 @@ object TranslationEngine {
             }
     }
 
+    fun close() {
+        sharedTranslator?.close()
+        sharedTranslator = null
+    }
+
     /**
      * Translates message text with fallback from cloud to on-device ML Kit.
      */
@@ -167,7 +172,7 @@ object TranslationEngine {
         sourceCode: String = currentSourceLang,
         targetCode: String = currentTargetLang,
         onSuccess: (String) -> Unit,
-        onError: ((Exception) -> Unit)? = null
+        onFailure: ((Exception) -> Unit)? = null
     ) {
         val cleanText = text.trim()
         if (cleanText.isEmpty()) {
@@ -198,7 +203,7 @@ object TranslationEngine {
             }
 
             // Fallback to local on-device ML Kit Translator
-            translateOnDevice(cleanText, onSuccess, onError)
+            translateOnDevice(cleanText, onSuccess, onFailure)
         }
     }
 

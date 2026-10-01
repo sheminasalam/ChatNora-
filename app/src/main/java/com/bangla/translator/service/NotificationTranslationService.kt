@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import com.bangla.translator.R
 import com.bangla.translator.data.AppPreferences
 import com.bangla.translator.translation.BengaliDetector
+import com.bangla.translator.translation.LanguageDetector
 import com.bangla.translator.translation.TranslationEngine
 
 /**

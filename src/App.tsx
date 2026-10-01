@@ -479,12 +479,12 @@ export default function App() {
           </div>
           <div>
             <div className="flex items-center space-x-2">
-              <h1 className="text-lg font-bold text-white tracking-tight">Universal WhatsApp Translator</h1>
+              <h1 className="text-lg font-bold text-white tracking-tight">ChatNora</h1>
               <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800">
                 Native Android 14 (v2.0.0)
               </span>
             </div>
-            <p className="text-xs text-slate-400">On-Device ML Kit Offline Translation Engine (19+ Languages Supported)</p>
+            <p className="text-xs text-slate-400">Universal WhatsApp On-Device Translator (19+ Languages Supported)</p>
           </div>
         </div>
 

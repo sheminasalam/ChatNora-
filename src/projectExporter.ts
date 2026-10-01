@@ -233,22 +233,22 @@ dependencies {
 `,
 
   'app/src/main/res/values/strings.xml': `<resources>
-    <string name="app_name">Bangla WhatsApp Translator</string>
-    <string name="accessibility_service_label">Bangla WhatsApp Translator Service</string>
-    <string name="accessibility_service_description">Reads visible Bengali messages inside WhatsApp and WhatsApp Business conversations to display instant on-device English translations as discreet overlays. Messages never leave your phone.</string>
+    <string name="app_name">ChatNora</string>
+    <string name="accessibility_service_label">ChatNora Accessibility Service</string>
+    <string name="accessibility_service_description">ChatNora detects foreign language messages inside WhatsApp and WhatsApp Business conversations to display instant on-device translations. 100% private, messages never leave your phone.</string>
     <string name="title_status">Service Status</string>
-    <string name="accessibility_status_enabled">Accessibility Service is Active</string>
-    <string name="accessibility_status_disabled">Accessibility Service is Disabled</string>
+    <string name="accessibility_status_enabled">ChatNora Service is Active</string>
+    <string name="accessibility_status_disabled">ChatNora Service is Disabled</string>
     <string name="btn_enable_accessibility">Configure Accessibility</string>
     <string name="title_model">Translation Engine (On-Device ML Kit)</string>
-    <string name="model_status_ready">Bengali → English Model Ready</string>
+    <string name="model_status_ready">On-Device Model Ready (~30MB)</string>
     <string name="model_status_needed">Model Download Required (~30MB)</string>
     <string name="model_status_downloading">Downloading Translation Model…</string>
     <string name="btn_download_model">Download Language Model</string>
     <string name="title_overlay_settings">In-App Chat Overlay</string>
-    <string name="desc_overlay_settings">Display translated English text directly beneath Bengali WhatsApp messages.</string>
+    <string name="desc_overlay_settings">Display translated text directly alongside WhatsApp chat messages.</string>
     <string name="title_notification_settings">WhatsApp Notification Translation</string>
-    <string name="desc_notification_settings">Automatically detect and translate incoming Bengali WhatsApp notifications.</string>
+    <string name="desc_notification_settings">Automatically detect and translate incoming WhatsApp notifications.</string>
     <string name="btn_enable_notification_access">Enable Notification Access</string>
     <string name="title_privacy">Privacy &amp; Security Assurance</string>
     <string name="privacy_body">All translations run 100% locally on your device via Google ML Kit. No message content is ever transmitted over the network or logged to remote servers.</string>
@@ -487,6 +487,60 @@ sealed class ModelDownloadState {
 }
 `,
 
+  'app/src/main/java/com/bangla/translator/data/SupportedLanguages.kt': `package com.bangla.translator.data
+
+import com.google.mlkit.nl.translate.TranslateLanguage
+
+data class LanguageItem(
+    val code: String,
+    val name: String,
+    val nativeName: String,
+    val mlKitCode: String
+) {
+    override fun toString(): String = "$name ($nativeName)"
+}
+
+object SupportedLanguages {
+    val ALL = listOf(
+        LanguageItem("bn", "Bengali", "বাংলা", TranslateLanguage.BENGALI),
+        LanguageItem("es", "Spanish", "Español", TranslateLanguage.SPANISH),
+        LanguageItem("hi", "Hindi", "हिंदी", TranslateLanguage.HINDI),
+        LanguageItem("ar", "Arabic", "العربية", TranslateLanguage.ARABIC),
+        LanguageItem("fr", "French", "Français", TranslateLanguage.FRENCH),
+        LanguageItem("de", "German", "Deutsch", TranslateLanguage.GERMAN),
+        LanguageItem("pt", "Portuguese", "Português", TranslateLanguage.PORTUGUESE),
+        LanguageItem("ru", "Russian", "Русский", TranslateLanguage.RUSSIAN),
+        LanguageItem("zh", "Chinese", "中文", TranslateLanguage.CHINESE),
+        LanguageItem("ja", "Japanese", "日本語", TranslateLanguage.JAPANESE),
+        LanguageItem("it", "Italian", "Italiano", TranslateLanguage.ITALIAN),
+        LanguageItem("tr", "Turkish", "Türkçe", TranslateLanguage.TURKISH),
+        LanguageItem("ur", "Urdu", "اردو", TranslateLanguage.URDU),
+        LanguageItem("id", "Indonesian", "Bahasa Indonesia", TranslateLanguage.INDONESIAN),
+        LanguageItem("ko", "Korean", "한국어", TranslateLanguage.KOREAN),
+        LanguageItem("vi", "Vietnamese", "Tiếng Việt", TranslateLanguage.VIETNAMESE),
+        LanguageItem("ta", "Tamil", "தமிழ்", TranslateLanguage.TAMIL),
+        LanguageItem("te", "Telugu", "తెలుగు", TranslateLanguage.TELUGU),
+        LanguageItem("mr", "Marathi", "मराठी", TranslateLanguage.MARATHI)
+    )
+
+    val TARGET_LANGUAGES = listOf(
+        LanguageItem("en", "English", "English", TranslateLanguage.ENGLISH),
+        LanguageItem("es", "Spanish", "Español", TranslateLanguage.SPANISH),
+        LanguageItem("fr", "French", "Français", TranslateLanguage.FRENCH),
+        LanguageItem("de", "German", "Deutsch", TranslateLanguage.GERMAN),
+        LanguageItem("bn", "Bengali", "বাংলা", TranslateLanguage.BENGALI),
+        LanguageItem("hi", "Hindi", "हिंदी", TranslateLanguage.HINDI),
+        LanguageItem("ar", "Arabic", "العربية", TranslateLanguage.ARABIC)
+    )
+
+    fun findByCode(code: String): LanguageItem {
+        return ALL.find { it.code.equals(code, ignoreCase = true) }
+            ?: TARGET_LANGUAGES.find { it.code.equals(code, ignoreCase = true) }
+            ?: ALL[0]
+    }
+}
+`,
+
   'app/src/main/java/com/bangla/translator/data/AppPreferences.kt': `package com.bangla.translator.data
 
 import android.content.Context
@@ -494,7 +548,7 @@ import android.content.SharedPreferences
 
 class AppPreferences(context: Context) {
     private val prefs: SharedPreferences = context.applicationContext.getSharedPreferences(
-        "bangla_translator_prefs",
+        "universal_translator_prefs",
         Context.MODE_PRIVATE
     )
 
@@ -509,6 +563,85 @@ class AppPreferences(context: Context) {
     var bengaliRatioThreshold: Float
         get() = prefs.getFloat("key_bengali_ratio", 0.20f)
         set(value) = prefs.edit().putFloat("key_bengali_ratio", value).apply()
+
+    var sourceLanguageCode: String
+        get() = prefs.getString("key_source_lang", "bn") ?: "bn"
+        set(value) = prefs.edit().putString("key_source_lang", value).apply()
+
+    var targetLanguageCode: String
+        get() = prefs.getString("key_target_lang", "en") ?: "en"
+        set(value) = prefs.edit().putString("key_target_lang", value).apply()
+
+    val languagePairLabel: String
+        get() {
+            val src = SupportedLanguages.findByCode(sourceLanguageCode)
+            val trg = SupportedLanguages.findByCode(targetLanguageCode)
+            return "\${src.nativeName} → \${trg.name}"
+        }
+
+    val badgeLabel: String
+        get() = targetLanguageCode.uppercase()
+
+    fun registerListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+    }
+
+    fun unregisterListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        prefs.unregisterOnSharedPreferenceChangeListener(listener)
+    }
+}
+`,
+
+  'app/src/main/java/com/bangla/translator/translation/LanguageDetector.kt': `package com.bangla.translator.translation
+
+import java.util.regex.Pattern
+
+object LanguageDetector {
+    private val URL_PATTERN = Pattern.compile("^https?://[\\\\w.-]+(?:\\\\.[\\\\w\\\\.-]+)+[/#?]?.*$", Pattern.CASE_INSENSITIVE)
+    private val TIMESTAMP_PATTERN = Pattern.compile("^\\\\d{1,2}:\\\\d{2}(?:\\\\s?[APap][Mm])?$")
+
+    fun isTargetLanguageMessage(text: CharSequence?, sourceLangCode: String = "bn", threshold: Float = 0.20f): Boolean {
+        if (text.isNullOrBlank()) return false
+        val trimmed = text.toString().trim()
+        if (trimmed.length < 2) return false
+        if (URL_PATTERN.matcher(trimmed).matches() || TIMESTAMP_PATTERN.matcher(trimmed).matches()) return false
+
+        return when (sourceLangCode.lowercase()) {
+            "bn" -> checkUnicodeBlock(trimmed, 0x0980..0x09FF, threshold)
+            "hi", "mr" -> checkUnicodeBlock(trimmed, 0x0900..0x097F, threshold)
+            "ar", "ur" -> checkUnicodeBlock(trimmed, 0x0600..0x06FF, threshold)
+            "ru" -> checkUnicodeBlock(trimmed, 0x0400..0x04FF, threshold)
+            "zh" -> checkUnicodeBlock(trimmed, 0x4E00..0x9FFF, threshold)
+            "ko" -> checkUnicodeBlock(trimmed, 0xAC00..0xD7AF, threshold)
+            "ja" -> checkJapanese(trimmed, threshold)
+            "ta" -> checkUnicodeBlock(trimmed, 0x0B80..0x0BFF, threshold)
+            "te" -> checkUnicodeBlock(trimmed, 0x0C00..0x0C7F, threshold)
+            else -> {
+                val lower = trimmed.lowercase()
+                lower.any { it in "ñáéíóú¿¡üçàèêôœãõßäö" } || trimmed.any { it.code > 0x007F && it.isLetter() }
+            }
+        }
+    }
+
+    private fun checkUnicodeBlock(text: String, range: IntRange, threshold: Float): Boolean {
+        var matchCount = 0
+        var totalLetters = 0
+        for (ch in text) {
+            if (ch.code in range) { matchCount++; totalLetters++ }
+            else if (ch.isLetter()) totalLetters++
+        }
+        return totalLetters > 0 && (matchCount.toFloat() / totalLetters) >= threshold
+    }
+
+    private fun checkJapanese(text: String, threshold: Float): Boolean {
+        var matchCount = 0
+        var totalLetters = 0
+        for (ch in text) {
+            if (ch.code in 0x3040..0x30FF || ch.code in 0x4E00..0x9FFF) { matchCount++; totalLetters++ }
+            else if (ch.isLetter()) totalLetters++
+        }
+        return totalLetters > 0 && (matchCount.toFloat() / totalLetters) >= threshold
+    }
 }
 `,
 
@@ -567,34 +700,151 @@ class TranslationCache(maxEntries: Int = 500) {
   'app/src/main/java/com/bangla/translator/translation/TranslationEngine.kt': `package com.bangla.translator.translation
 
 import com.bangla.translator.data.ModelDownloadState
+import com.bangla.translator.data.SupportedLanguages
+import com.google.android.gms.tasks.Task
+import com.google.mlkit.common.model.DownloadConditions
 import com.google.mlkit.common.model.RemoteModelManager
 import com.google.mlkit.nl.translate.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+import java.util.concurrent.Executors
 
 object TranslationEngine {
-    private val options = TranslatorOptions.Builder()
-        .setSourceLanguage(TranslateLanguage.BENGALI)
-        .setTargetLanguage(TranslateLanguage.ENGLISH)
-        .build()
-
+    private val networkExecutor = Executors.newFixedThreadPool(3)
+    private var currentSourceLang: String = TranslateLanguage.BENGALI
+    private var currentTargetLang: String = TranslateLanguage.ENGLISH
     var sharedTranslator: Translator? = null
     val cache = TranslationCache(500)
     private val _modelState = MutableStateFlow<ModelDownloadState>(ModelDownloadState.NotDownloaded)
     val modelState = _modelState.asStateFlow()
 
-    fun translate(text: String, onSuccess: (String) -> Unit, onFailure: (Exception) -> Unit) {
-        val normalized = cache.normalize(text)
-        val cached = cache.get(normalized)
+    @Synchronized
+    fun setLanguagePair(sourceCode: String, targetCode: String) {
+        val srcMl = SupportedLanguages.findByCode(sourceCode).mlKitCode
+        val trgMl = SupportedLanguages.findByCode(targetCode).mlKitCode
+        if (srcMl != currentSourceLang || trgMl != currentTargetLang) {
+            currentSourceLang = srcMl
+            currentTargetLang = trgMl
+            sharedTranslator?.close()
+            sharedTranslator = null
+            cache.clear()
+            checkModelAvailability(srcMl)
+        }
+    }
+
+    fun checkModelAvailability(sourceLangCode: String = currentSourceLang) {
+        val modelManager = RemoteModelManager.getInstance()
+        val remoteModel = TranslateRemoteModel.Builder(sourceLangCode).build()
+        modelManager.isModelDownloaded(remoteModel)
+            .addOnSuccessListener { isDownloaded ->
+                _modelState.value = if (isDownloaded) ModelDownloadState.Ready else ModelDownloadState.NotDownloaded
+            }
+            .addOnFailureListener {
+                _modelState.value = ModelDownloadState.Error(it.localizedMessage ?: "Unknown model error")
+            }
+    }
+
+    @Synchronized
+    private fun getOrCreateTranslator(): Translator {
+        val existing = sharedTranslator
+        if (existing != null) return existing
+        val options = TranslatorOptions.Builder()
+            .setSourceLanguage(currentSourceLang)
+            .setTargetLanguage(currentTargetLang)
+            .build()
+        val translator = Translation.getClient(options)
+        sharedTranslator = translator
+        return translator
+    }
+
+    @Synchronized
+    fun prepareModelIfNeeded(
+        conditions: DownloadConditions = DownloadConditions.Builder().build(),
+        onSuccess: (() -> Unit)? = null,
+        onFailure: ((Exception) -> Unit)? = null
+    ): Task<Void> {
+        _modelState.value = ModelDownloadState.Downloading
+        val translator = getOrCreateTranslator()
+        val downloadTask = translator.downloadModelIfNeeded(conditions)
+        downloadTask.addOnSuccessListener {
+            _modelState.value = ModelDownloadState.Ready
+            onSuccess?.invoke()
+        }.addOnFailureListener { error ->
+            _modelState.value = ModelDownloadState.Error(error.localizedMessage ?: "Model download failed")
+            onFailure?.invoke(error)
+        }
+        return downloadTask
+    }
+
+    fun deleteModel(sourceLangCode: String = currentSourceLang, onComplete: () -> Unit) {
+        val modelManager = RemoteModelManager.getInstance()
+        val remoteModel = TranslateRemoteModel.Builder(sourceLangCode).build()
+        modelManager.deleteDownloadedModel(remoteModel)
+            .addOnCompleteListener {
+                sharedTranslator?.close()
+                sharedTranslator = null
+                checkModelAvailability(sourceLangCode)
+                onComplete()
+            }
+    }
+
+    fun close() {
+        sharedTranslator?.close()
+        sharedTranslator = null
+    }
+
+    fun translate(
+        text: String,
+        sourceCode: String = currentSourceLang,
+        targetCode: String = currentTargetLang,
+        onSuccess: (String) -> Unit,
+        onFailure: ((Exception) -> Unit)? = null
+    ) {
+        val cleanText = text.trim()
+        if (cleanText.isEmpty()) { onSuccess(""); return }
+        val cached = cache.get(cleanText)
         if (cached != null) { onSuccess(cached); return }
 
-        val translator = sharedTranslator ?: Translation.getClient(options).also { sharedTranslator = it }
-        translator.translate(normalized)
-            .addOnSuccessListener { res ->
-                cache.put(normalized, res)
-                onSuccess(res)
+        networkExecutor.execute {
+            var translatedOnline: String? = null
+            try {
+                val encodedText = URLEncoder.encode(cleanText, "UTF-8")
+                val urlStr = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=\$sourceCode&tl=\$targetCode&dt=t&q=\$encodedText"
+                val conn = URL(urlStr).openConnection() as HttpURLConnection
+                conn.connectTimeout = 3000
+                conn.readTimeout = 3000
+                if (conn.responseCode == 200) {
+                    val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                    val ja = org.json.JSONArray(resp)
+                    val sArr = ja.getJSONArray(0)
+                    val sb = StringBuilder()
+                    for (i in 0 until sArr.length()) sb.append(sArr.getJSONArray(i).getString(0))
+                    val r = sb.toString().trim()
+                    if (r.isNotEmpty()) translatedOnline = r
+                }
+            } catch (_: Exception) {}
+
+            if (!translatedOnline.isNullOrBlank() && translatedOnline != cleanText) {
+                cache.put(cleanText, translatedOnline)
+                onSuccess(translatedOnline)
+                return@execute
             }
-            .addOnFailureListener(onFailure)
+
+            try {
+                val translator = getOrCreateTranslator()
+                translator.translate(cleanText)
+                    .addOnSuccessListener { res ->
+                        cache.put(cleanText, res)
+                        onSuccess(res)
+                    }
+                    .addOnFailureListener { err -> onFailure?.invoke(err) ?: onSuccess(cleanText) }
+            } catch (e: Exception) {
+                onFailure?.invoke(e) ?: onSuccess(cleanText)
+            }
+        }
     }
 }
 `,
@@ -605,9 +855,13 @@ import android.graphics.Rect
 import android.view.accessibility.AccessibilityNodeInfo
 import com.bangla.translator.data.ScannedMessage
 import com.bangla.translator.translation.BengaliDetector
+import com.bangla.translator.translation.LanguageDetector
 import java.util.ArrayDeque
 
-class WhatsAppMessageScanner(private val bengaliRatioThreshold: Float = 0.20f) {
+class WhatsAppMessageScanner(
+    private val sourceLangCode: String = "bn",
+    private val ratioThreshold: Float = 0.20f
+) {
     companion object {
         val SUPPORTED_PACKAGES = setOf("com.whatsapp", "com.whatsapp.w4b")
     }
@@ -633,7 +887,7 @@ class WhatsAppMessageScanner(private val bengaliRatioThreshold: Float = 0.20f) {
                         if (tempBounds.width() > 15 && tempBounds.height() > 15) {
                             if (!isInsideQuotedMessage(node)) {
                                 val text = node.text?.toString()
-                                if (!text.isNullOrBlank() && !node.isEditable && BengaliDetector.isBengali(text, bengaliRatioThreshold)) {
+                                if (!text.isNullOrBlank() && !node.isEditable && LanguageDetector.isTargetLanguageMessage(text, sourceLangCode, ratioThreshold)) {
                                     val norm = text.trim().replace(Regex("\\\\s+"), " ")
                                     val isDup = results.any {
                                         it.normalizedText == norm &&
@@ -971,18 +1225,22 @@ class OverlayController(private val context: Context, private val windowManager:
   'app/src/main/java/com/bangla/translator/service/BanglaAccessibilityService.kt': `package com.bangla.translator.service
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.Context
+import android.content.SharedPreferences
 import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import com.bangla.translator.data.AppPreferences
+import com.bangla.translator.data.ScannedMessage
 import com.bangla.translator.overlay.OverlayController
 import com.bangla.translator.scanner.WhatsAppMessageScanner
 import com.bangla.translator.translation.TranslationEngine
 import java.util.concurrent.atomic.AtomicLong
 
-class BanglaAccessibilityService : AccessibilityService() {
+class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnSharedPreferenceChangeListener {
     private val sessionGeneration = AtomicLong(1L)
     private lateinit var appPreferences: AppPreferences
     private lateinit var overlayController: OverlayController
@@ -992,55 +1250,160 @@ class BanglaAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         appPreferences = AppPreferences(this)
-        messageScanner = WhatsAppMessageScanner(appPreferences.bengaliRatioThreshold)
+        appPreferences.registerListener(this)
+        messageScanner = WhatsAppMessageScanner(appPreferences.sourceLanguageCode, appPreferences.bengaliRatioThreshold)
         overlayController = OverlayController(this, wm)
+        TranslationEngine.setLanguagePair(appPreferences.sourceLanguageCode, appPreferences.targetLanguageCode)
+
+        val metrics = resources.displayMetrics
+        screenBounds.set(0, 0, metrics.widthPixels, metrics.heightPixels)
+
+        val info = serviceInfo ?: AccessibilityServiceInfo()
+        info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
+                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
+                AccessibilityEvent.TYPE_VIEW_SCROLLED or
+                AccessibilityEvent.TYPE_WINDOWS_CHANGED
+        info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
+        info.flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+        info.notificationTimeout = 100
+        serviceInfo = info
+        TranslationEngine.checkModelAvailability()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
         val pkg = event.packageName?.toString() ?: ""
         if (pkg !in WhatsAppMessageScanner.SUPPORTED_PACKAGES) {
-            handleLeftWhatsApp()
+            if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg.isNotEmpty()) {
+                sessionGeneration.incrementAndGet()
+                overlayController.removeAllOverlays()
+            }
             return
         }
 
-        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            sessionGeneration.incrementAndGet()
+        if (!appPreferences.isOverlayEnabled) return
+
+        mainHandler.postDelayed({
+            val root = rootInActiveWindow ?: return@postDelayed
+            val currentGen = sessionGeneration.get()
+            val messages = messageScanner.scanVisibleMessages(root, screenBounds, currentGen)
+            root.recycle()
+
+            val currentlyVisible = messages.map { it.displayKey }.toSet()
+            overlayController.reconcileVisibleOverlays(currentlyVisible)
+
+            for (msg in messages) {
+                TranslationEngine.translate(
+                    text = msg.normalizedText,
+                    onSuccess = { translated ->
+                        if (sessionGeneration.get() == currentGen) {
+                            overlayController.showOverlay(
+                                displayKey = msg.displayKey,
+                                translatedText = translated,
+                                targetBounds = msg.bounds,
+                                sessionGeneration = currentGen,
+                                screenBounds = screenBounds
+                            )
+                        }
+                    },
+                    onFailure = {}
+                )
+            }
+        }, 150L)
+    }
+
+    override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
+        if (key == "key_overlay_enabled") {
+            if (!appPreferences.isOverlayEnabled) overlayController.removeAllOverlays()
+        } else if (key == "key_bengali_ratio" || key == "key_source_lang" || key == "key_target_lang") {
+            messageScanner = WhatsAppMessageScanner(appPreferences.sourceLanguageCode, appPreferences.bengaliRatioThreshold)
+            TranslationEngine.setLanguagePair(appPreferences.sourceLanguageCode, appPreferences.targetLanguageCode)
             overlayController.removeAllOverlays()
         }
     }
 
-    private fun handleLeftWhatsApp() {
-        sessionGeneration.incrementAndGet()
+    override fun onInterrupt() {
         overlayController.removeAllOverlays()
     }
 
-    override fun onInterrupt() {
+    override fun onDestroy() {
+        super.onDestroy()
+        appPreferences.unregisterListener(this)
         overlayController.removeAllOverlays()
+        TranslationEngine.close()
     }
 }
 `,
 
   'app/src/main/java/com/bangla/translator/service/NotificationTranslationService.kt': `package com.bangla.translator.service
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.os.Build
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
-import com.bangla.translator.translation.BengaliDetector
+import androidx.core.app.NotificationCompat
+import com.bangla.translator.R
+import com.bangla.translator.data.AppPreferences
+import com.bangla.translator.translation.LanguageDetector
 import com.bangla.translator.translation.TranslationEngine
 
 class NotificationTranslationService : NotificationListenerService() {
+    private lateinit var appPreferences: AppPreferences
+
+    override fun onCreate() {
+        super.onCreate()
+        appPreferences = AppPreferences(this)
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null) return
         val pkg = sbn.packageName ?: return
         if (pkg !in setOf("com.whatsapp", "com.whatsapp.w4b")) return
+        if (!appPreferences.isNotificationTranslationEnabled) return
 
         val extras = sbn.notification?.extras ?: return
+        val title = extras.getCharSequence("android.title")?.toString() ?: ""
         val text = extras.getCharSequence("android.text")?.toString() ?: return
-        if (BengaliDetector.isBengali(text)) {
-            TranslationEngine.translate(text, onSuccess = { /* Post translated companion */ }, onFailure = {})
+
+        if (LanguageDetector.isTargetLanguageMessage(text, appPreferences.sourceLanguageCode, appPreferences.bengaliRatioThreshold)) {
+            TranslationEngine.translate(
+                text = text,
+                onSuccess = { translatedText ->
+                    postTranslatedNotification(pkg, title, text, translatedText, sbn.id)
+                },
+                onFailure = {}
+            )
         }
+    }
+
+    private fun postTranslatedNotification(originalPkg: String, senderTitle: String, originalText: String, translatedText: String, notificationId: Int) {
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channelId = "chatnora_translations"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(channelId, "ChatNora Translations", NotificationManager.IMPORTANCE_DEFAULT)
+            nm.createNotificationChannel(channel)
+        }
+
+        val launchIntent = packageManager.getLaunchIntentForPackage(originalPkg)
+        val pendingIntent = if (launchIntent != null) {
+            PendingIntent.getActivity(this, notificationId, launchIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        } else null
+
+        val builder = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(R.drawable.ic_app_launcher)
+            .setContentTitle(if (senderTitle.isNotBlank()) "\$senderTitle (Translated)" else "ChatNora")
+            .setContentText(translatedText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText("\$translatedText\\n\\nOriginal: \$originalText"))
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+
+        nm.notify(notificationId + 200000, builder.build())
     }
 }
 `,
@@ -1050,19 +1413,83 @@ class NotificationTranslationService : NotificationListenerService() {
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
+import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.bangla.translator.data.AppPreferences
+import com.bangla.translator.data.ModelDownloadState
+import com.bangla.translator.data.SupportedLanguages
 import com.bangla.translator.databinding.ActivityMainBinding
+import com.bangla.translator.translation.TranslationEngine
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
+    private lateinit var appPreferences: AppPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        appPreferences = AppPreferences(this)
+
+        val srcAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, SupportedLanguages.ALL)
+        binding.spinnerSourceLanguage.adapter = srcAdapter
+        val trgAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, SupportedLanguages.TARGET_LANGUAGES)
+        binding.spinnerTargetLanguage.adapter = trgAdapter
+
+        binding.spinnerSourceLanguage.setSelection(SupportedLanguages.ALL.indexOfFirst { it.code == appPreferences.sourceLanguageCode }.coerceAtLeast(0))
+        binding.spinnerTargetLanguage.setSelection(SupportedLanguages.TARGET_LANGUAGES.indexOfFirst { it.code == appPreferences.targetLanguageCode }.coerceAtLeast(0))
+
+        binding.spinnerSourceLanguage.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                val item = SupportedLanguages.ALL[pos]
+                if (item.code != appPreferences.sourceLanguageCode) {
+                    appPreferences.sourceLanguageCode = item.code
+                    TranslationEngine.setLanguagePair(item.code, appPreferences.targetLanguageCode)
+                }
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+
+        binding.spinnerTargetLanguage.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                val item = SupportedLanguages.TARGET_LANGUAGES[pos]
+                if (item.code != appPreferences.targetLanguageCode) {
+                    appPreferences.targetLanguageCode = item.code
+                    TranslationEngine.setLanguagePair(appPreferences.sourceLanguageCode, item.code)
+                }
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
 
         binding.btnEnableAccessibility.setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+
+        binding.btnDownloadModel.setOnClickListener {
+            binding.pbModelDownload.visibility = View.VISIBLE
+            TranslationEngine.prepareModelIfNeeded(
+                onSuccess = {
+                    runOnUiThread {
+                        binding.pbModelDownload.visibility = View.GONE
+                        Toast.makeText(this, "Model ready offline!", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onFailure = {
+                    runOnUiThread {
+                        binding.pbModelDownload.visibility = View.GONE
+                        Toast.makeText(this, "Download error: \${it.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            )
+        }
+
+        binding.btnDeleteModel.setOnClickListener {
+            TranslationEngine.deleteModel {
+                runOnUiThread { Toast.makeText(this, "Model deleted.", Toast.LENGTH_SHORT).show() }
+            }
         }
     }
 }
@@ -1080,9 +1507,10 @@ export async function downloadProjectZip() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'BanglaWhatsAppTranslator-AndroidStudio.zip';
+  a.download = 'ChatNora-AndroidStudio.zip';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
