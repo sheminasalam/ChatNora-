@@ -17,6 +17,17 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    base {
+        archivesName.set("ChatNora")
+    }
+
+    applicationVariants.all {
+        outputs.all {
+            val output = this as? com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            output?.outputFileName = "ChatNora-\${name}.apk"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true

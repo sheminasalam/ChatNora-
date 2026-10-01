@@ -1,4 +1,4 @@
-name: Build Bangla WhatsApp Translator APK
+name: Build ChatNora APK
 
 on:
   push:
@@ -41,11 +41,12 @@ jobs:
       - name: Rename APK for clarity
         run: |
           mkdir -p build-output
-          cp app/build/outputs/apk/debug/app-debug.apk build-output/BanglaWhatsAppTranslator-debug.apk
+          # Locate whatever debug apk gradle produced and copy to ChatNora-debug.apk
+          find app/build/outputs/apk/debug/ -name "*.apk" -exec cp {} build-output/ChatNora-debug.apk \;
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BanglaWhatsAppTranslator-debug
-          path: build-output/BanglaWhatsAppTranslator-debug.apk
+          name: ChatNora-debug-apk
+          path: build-output/ChatNora-debug.apk
           retention-days: 14

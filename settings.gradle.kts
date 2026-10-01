@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "BanglaWhatsAppTranslator"
+rootProject.name = "ChatNora"
 include(":app")

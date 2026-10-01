@@ -22,7 +22,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "BanglaWhatsAppTranslator"
+rootProject.name = "ChatNora"
 include(":app")
 `,
 
@@ -40,7 +40,7 @@ android.nonTransitiveRClass=true
 kotlin.code.style=official
 `,
 
-  '.github/workflows/build.yml': `name: Build Bangla WhatsApp Translator APK
+  '.github/workflows/build.yml': `name: Build ChatNora APK
 
 on:
   push:
@@ -83,13 +83,13 @@ jobs:
       - name: Rename APK for clarity
         run: |
           mkdir -p build-output
-          cp app/build/outputs/apk/debug/app-debug.apk build-output/BanglaWhatsAppTranslator-debug.apk
+          find app/build/outputs/apk/debug/ -name "*.apk" -exec cp {} build-output/ChatNora-debug.apk \\;
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BanglaWhatsAppTranslator-debug
-          path: build-output/BanglaWhatsAppTranslator-debug.apk
+          name: ChatNora-debug-apk
+          path: build-output/ChatNora-debug.apk
           retention-days: 14
 `,
 
@@ -110,6 +110,17 @@ android {
         versionName = "2.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    base {
+        archivesName.set("ChatNora")
+    }
+
+    applicationVariants.all {
+        outputs.all {
+            val output = this as? com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            output?.outputFileName = "ChatNora-\${name}.apk"
+        }
     }
 
     buildTypes {
@@ -179,11 +190,11 @@ dependencies {
 
     <application
         android:allowBackup="false"
-        android:icon="@drawable/ic_app_launcher"
+        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:roundIcon="@drawable/ic_app_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
-        android:theme="@style/Theme.BanglaWhatsAppTranslator">
+        android:theme="@style/Theme.ChatNora">
 
         <activity
             android:name=".MainActivity"
@@ -355,13 +366,14 @@ dependencies {
 `,
 
   'app/src/main/res/values/themes.xml': `<resources>
-    <style name="Theme.BanglaWhatsAppTranslator" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Theme.ChatNora" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/primary</item>
         <item name="colorPrimaryDark">@color/primary_dark</item>
         <item name="colorSecondary">@color/accent</item>
         <item name="android:statusBarColor">@color/primary_dark</item>
         <item name="android:windowBackground">@color/background_light</item>
     </style>
+    <style name="Theme.BanglaWhatsAppTranslator" parent="Theme.ChatNora" />
 </resources>
 `,
 
@@ -1500,7 +1512,7 @@ export async function downloadProjectZip() {
   const zip = new JSZip();
 
   for (const [filename, content] of Object.entries(ALL_PROJECT_FILES)) {
-    zip.file(filename, content);
+    zip.file(`ChatNora/\${filename}`, content);
   }
 
   const blob = await zip.generateAsync({ type: 'blob' });

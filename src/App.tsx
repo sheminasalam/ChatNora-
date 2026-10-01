@@ -474,14 +474,16 @@ export default function App() {
       {/* Top Header */}
       <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur px-6 py-4 sticky top-0 z-50 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#25D366] to-[#128C7E] border-2 border-white/90 shadow-md flex items-center justify-center text-white font-bold relative overflow-hidden">
-            <span className="text-sm font-bold tracking-tighter">文⇄A</span>
-          </div>
+          <img
+            src="/chatnora-icon.png"
+            alt="ChatNora Logo"
+            className="w-11 h-11 rounded-2xl shadow-lg border border-emerald-500/40 object-cover bg-emerald-950"
+          />
           <div>
             <div className="flex items-center space-x-2">
-              <h1 className="text-lg font-bold text-white tracking-tight">ChatNora</h1>
-              <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800">
-                Native Android 14 (v2.0.0)
+              <h1 className="text-xl font-black text-white tracking-tight">ChatNora</h1>
+              <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800">
+                v2.0.0 (Native Android 14)
               </span>
             </div>
             <p className="text-xs text-slate-400">Universal WhatsApp On-Device Translator (19+ Languages Supported)</p>
@@ -536,33 +538,40 @@ export default function App() {
           <div className="space-y-6">
             {/* Hero Card */}
             <div className="bg-gradient-to-r from-emerald-950/70 via-slate-900 to-slate-900 border border-emerald-500/30 rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
-              <div className="max-w-3xl">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-900/50 border border-emerald-600/40 text-emerald-300 text-xs font-semibold mb-4">
-                  <PackageCheck className="w-3.5 h-3.5" /> Ready for Android Studio &amp; GitHub Actions
-                </div>
-                <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                  Download Bangla WhatsApp Translator
-                </h2>
-                <p className="text-sm text-slate-300 mt-2 leading-relaxed">
-                  Download the complete native Android Studio project archive (.zip) containing all Kotlin sources, layouts, Gradle configs, and ML Kit dependencies, or use the automated GitHub Actions CI pipeline to compile the debug APK in 2 minutes.
-                </p>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
+                <img
+                  src="/chatnora-icon.png"
+                  alt="ChatNora Official Icon"
+                  className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl shadow-2xl border-2 border-emerald-400/50 object-cover shrink-0"
+                />
+                <div className="max-w-2xl">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-900/50 border border-emerald-600/40 text-emerald-300 text-xs font-semibold mb-3">
+                    <PackageCheck className="w-3.5 h-3.5" /> Ready for Android Studio &amp; GitHub Actions
+                  </div>
+                  <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                    Download ChatNora (v2.0.0)
+                  </h2>
+                  <p className="text-sm text-slate-300 mt-2 leading-relaxed">
+                    Download the complete native Android Studio project archive (.zip) containing all Kotlin sources, layouts, Gradle configs, and ML Kit dependencies, or use the automated GitHub Actions CI pipeline to compile the debug APK in 2 minutes.
+                  </p>
 
-                <div className="flex flex-wrap items-center gap-4 mt-6">
-                  <button
-                    onClick={handleDownloadProject}
-                    disabled={isDownloadingZip}
-                    className="flex items-center gap-2.5 px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-emerald-900/50 transition transform hover:-translate-y-0.5 disabled:opacity-50 cursor-pointer"
-                  >
-                    <Download className={`w-4 h-4 ${isDownloadingZip ? 'animate-bounce' : ''}`} />
-                    {isDownloadingZip ? 'Generating Project Zip...' : 'Download Full Android Studio Project (.ZIP)'}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-4 mt-6">
+                    <button
+                      onClick={handleDownloadProject}
+                      disabled={isDownloadingZip}
+                      className="flex items-center gap-2.5 px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-emerald-900/50 transition transform hover:-translate-y-0.5 disabled:opacity-50 cursor-pointer"
+                    >
+                      <Download className={`w-4 h-4 ${isDownloadingZip ? 'animate-bounce' : ''}`} />
+                      {isDownloadingZip ? 'Generating Project Zip...' : 'Download ChatNora Project (.ZIP)'}
+                    </button>
 
-                  <button
-                    onClick={() => setActiveTab('code')}
-                    className="flex items-center gap-2 px-4 py-3 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 text-sm font-semibold border border-slate-700 transition"
-                  >
-                    <FileCode2 className="w-4 h-4" /> Browse Code ({Object.keys(ANDROID_FILES).length} files)
-                  </button>
+                    <button
+                      onClick={() => setActiveTab('code')}
+                      className="flex items-center gap-2 px-4 py-3 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 text-sm font-semibold border border-slate-700 transition"
+                    >
+                      <FileCode2 className="w-4 h-4" /> Browse Code ({Object.keys(ANDROID_FILES).length} files)
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -580,21 +589,21 @@ export default function App() {
                   </div>
                   <h3 className="text-base font-bold text-white mb-1">1. Cloud APK Build via GitHub Actions</h3>
                   <p className="text-xs text-slate-400 leading-relaxed mb-4">
-                    No Android SDK needed on your computer. GitHub's cloud runners build <code className="text-emerald-400">BanglaWhatsAppTranslator-debug.apk</code> in ~2 minutes.
+                    No Android SDK needed on your computer. GitHub's cloud runners build <code className="text-emerald-400 font-semibold">ChatNora-debug.apk</code> in ~2 minutes.
                   </p>
 
                   <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 font-mono text-[11px] text-slate-300 space-y-1.5 mb-4">
                     <div className="text-slate-500"># Step 1: Push code to GitHub</div>
                     <div>git add .</div>
-                    <div>git commit -m &quot;Bangla WhatsApp Translator&quot;</div>
+                    <div>git commit -m &quot;ChatNora v2.0.0&quot;</div>
                     <div>git push origin main</div>
                     <div className="text-slate-500 pt-1"># Step 2: Open GitHub Actions tab</div>
-                    <div className="text-emerald-400 font-semibold">&gt; Download BanglaWhatsAppTranslator-debug.apk</div>
+                    <div className="text-emerald-400 font-semibold">&gt; Download ChatNora-debug-apk</div>
                   </div>
                 </div>
 
                 <div className="text-[11px] text-slate-400 bg-slate-950/60 p-2.5 rounded-lg border border-slate-800">
-                  <span className="font-semibold text-emerald-400">Artifact:</span> The compiled APK is saved in the GitHub Actions summary under &quot;Artifacts&quot;.
+                  <span className="font-semibold text-emerald-400">Artifact:</span> The compiled APK is saved as <code className="text-emerald-300">ChatNora-debug.apk</code> under &quot;Artifacts&quot;.
                 </div>
               </div>
 
@@ -606,17 +615,17 @@ export default function App() {
                   </div>
                   <h3 className="text-base font-bold text-white mb-1">2. 1-Click Build in Android Studio</h3>
                   <p className="text-xs text-slate-400 leading-relaxed mb-4">
-                    Extract the downloaded zip, open in Android Studio Hedgehog or newer, and generate the debug or release APK.
+                    Extract the downloaded zip, open the <code className="text-sky-300">ChatNora</code> folder in Android Studio, and generate the debug or release APK.
                   </p>
 
                   <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-[11px] text-slate-300 space-y-2 mb-4">
                     <div className="flex items-start gap-2">
                       <span className="font-bold text-sky-400">1.</span>
-                      <span>Download &amp; unzip <code className="text-slate-200">BanglaWhatsAppTranslator-AndroidStudio.zip</code></span>
+                      <span>Download &amp; unzip <code className="text-slate-200">ChatNora-AndroidStudio.zip</code></span>
                     </div>
                     <div className="flex items-start gap-2">
                       <span className="font-bold text-sky-400">2.</span>
-                      <span>Select <strong>File &gt; Open</strong> in Android Studio</span>
+                      <span>Select <strong>File &gt; Open</strong> &gt; Choose <strong>ChatNora</strong> folder</span>
                     </div>
                     <div className="flex items-start gap-2">
                       <span className="font-bold text-sky-400">3.</span>
@@ -626,7 +635,7 @@ export default function App() {
                 </div>
 
                 <div className="text-[11px] text-slate-400 bg-slate-950/60 p-2.5 rounded-lg border border-slate-800">
-                  <span className="font-semibold text-sky-400">Output path:</span> <code className="text-[10px]">app/build/outputs/apk/debug/app-debug.apk</code>
+                  <span className="font-semibold text-sky-400">Output APK:</span> <code className="text-[10px]">app/build/outputs/apk/debug/ChatNora-debug.apk</code>
                 </div>
               </div>
 

@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Background Gradient for 3D Glossy WhatsApp Green Bubble -->
+    <linearGradient id="bubbleGradient" x1="20%" y1="10%" x2="80%" y2="90%">
+      <stop offset="0%" stop-color="#34E875" />
+      <stop offset="35%" stop-color="#25D366" />
+      <stop offset="70%" stop-color="#128C7E" />
+      <stop offset="100%" stop-color="#0B5C4B" />
+    </linearGradient>
+
+    <!-- Specular Highlight for Glossy Glass Reflection -->
+    <linearGradient id="glossHighlight" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.55" />
+      <stop offset="40%" stop-color="#FFFFFF" stop-opacity="0.15" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.0" />
+    </linearGradient>
+
+    <!-- Drop Shadow for 3D Floating Presence -->
+    <filter id="shadowFilter" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="24" stdDeviation="32" flood-color="#000000" flood-opacity="0.25" />
+    </filter>
+
+    <filter id="symbolShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000000" flood-opacity="0.18" />
+    </filter>
+  </defs>
+
+  <g filter="url(#shadowFilter)">
+    <!-- Outer Thick White Halo / Speech Bubble Outline -->
+    <path d="M530 110 C290 110 96 304 96 544 C96 626 120 702 160 768 L90 946 L278 890 C348 934 436 960 530 960 C770 960 964 766 964 526 C964 286 770 110 530 110 Z"
+          fill="#FFFFFF" />
+
+    <!-- Inner Vibrant Glossy Green Speech Bubble -->
+    <path d="M530 148 C312 148 136 324 136 542 C136 616 158 686 194 746 L130 908 L300 858 C364 898 444 922 530 922 C748 922 924 746 924 528 C924 310 748 148 530 148 Z"
+          fill="url(#bubbleGradient)" />
+
+    <!-- Top Gloss Reflection Arc -->
+    <path d="M530 148 C312 148 136 324 136 542 C136 570 140 598 146 624 C190 380 340 220 530 220 C710 220 856 370 904 600 C918 574 924 546 924 528 C924 310 748 148 530 148 Z"
+          fill="url(#glossHighlight)" />
+  </g>
+
+  <!-- Symbols Group with Subtle Inset Shadow -->
+  <g filter="url(#symbolShadow)" fill="#FFFFFF">
+    
+    <!-- TOP ARROW: Clockwise arc from above 文 to A -->
+    <path d="M 506 286 C 600 286 684 332 728 402 L 678 422 L 784 466 L 794 346 L 752 380 C 698 300 608 248 506 248 C 460 248 416 258 376 276 L 396 314 C 430 300 466 286 506 286 Z" />
+
+    <!-- BOTTOM ARROW: Clockwise arc from below A back up to 文 -->
+    <path d="M 488 734 C 394 734 310 688 266 618 L 316 598 L 210 554 L 200 674 L 242 640 C 296 720 386 772 488 772 C 534 772 578 762 618 744 L 598 706 C 564 720 528 734 488 734 Z" />
+
+    <!-- LEFT SYMBOL: Chinese character '文' (Wen) -->
+    <!-- Top Dot/Head (rounded pill) -->
+    <rect x="368" y="324" width="44" height="66" rx="22" />
+
+    <!-- Horizontal Bar with rounded ends -->
+    <rect x="254" y="388" width="272" height="48" rx="24" />
+
+    <!-- Left Slanting Stroke (Pie) - curved sweeping blade -->
+    <path d="M 406 432 C 386 510 342 590 256 650 C 240 662 220 648 230 632 C 304 576 342 506 358 432 Z" />
+
+    <!-- Right Slanting Stroke (Na) - sweeping down right -->
+    <path d="M 334 476 C 368 514 424 582 500 638 C 516 650 534 634 522 620 C 452 568 402 508 370 476 Z" />
+
+    <!-- RIGHT SYMBOL: Bold English Letter 'A' -->
+    <path d="M 670 474 L 626 474 L 526 770 L 594 770 L 618 696 L 702 696 L 726 770 L 794 770 Z M 634 646 L 660 558 L 686 646 Z" />
+
+  </g>
+</svg>
