@@ -534,6 +534,7 @@ class OverlayController(
         runOnMainThread {
             expandedDisplayKey = null
             removeDismissBackdrop()
+            dismissLanguageProposal()
             mainHandler.removeCallbacks(autoCollapseRunnable)
             for ((key, overlay) in activeOverlays) {
                 try {
@@ -543,6 +544,96 @@ class OverlayController(
                 }
             }
             activeOverlays.clear()
+        }
+    }
+
+    private var proposalView: View? = null
+
+    /**
+     * Displays an elegant, non-intrusive floating chip suggesting a language pack download
+     * when a foreign language is auto-detected in the active WhatsApp conversation.
+     */
+    fun showLanguageProposal(
+        languageItem: com.bangla.translator.data.LanguageItem,
+        onAccept: () -> Unit,
+        onDismiss: () -> Unit
+    ) {
+        runOnMainThread {
+            if (proposalView != null) return@runOnMainThread
+
+            val card = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setBackgroundResource(R.drawable.bg_overlay_incoming)
+                setPadding((12 * density).toInt(), (8 * density).toInt(), (12 * density).toInt(), (8 * density).toInt())
+                elevation = 12f * density
+                gravity = Gravity.CENTER_VERTICAL
+            }
+
+            val tvText = TextView(context).apply {
+                text = "🌐 Detected ${languageItem.name}. Download pack (~30MB)?"
+                setTextColor(Color.WHITE)
+                textSize = 12f
+                setPadding(0, 0, (10 * density).toInt(), 0)
+            }
+
+            val btnAccept = TextView(context).apply {
+                text = "Download"
+                setTextColor(Color.parseColor("#25D366"))
+                textSize = 12f
+                paint.isFakeBoldText = true
+                setPadding((6 * density).toInt(), (2 * density).toInt(), (6 * density).toInt(), (2 * density).toInt())
+                setOnClickListener {
+                    dismissLanguageProposal()
+                    onAccept()
+                }
+            }
+
+            val btnDismiss = TextView(context).apply {
+                text = "✕"
+                setTextColor(Color.parseColor("#A0AEC0"))
+                textSize = 12f
+                setPadding((8 * density).toInt(), 0, (4 * density).toInt(), 0)
+                setOnClickListener {
+                    dismissLanguageProposal()
+                    onDismiss()
+                }
+            }
+
+            card.addView(tvText)
+            card.addView(btnAccept)
+            card.addView(btnDismiss)
+
+            val lp = WindowManager.LayoutParams().apply {
+                width = WindowManager.LayoutParams.WRAP_CONTENT
+                height = WindowManager.LayoutParams.WRAP_CONTENT
+                type = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WindowManager.LayoutParams.TYPE_PHONE
+                }
+                flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+                format = PixelFormat.TRANSLUCENT
+                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                y = (60 * density).toInt()
+            }
+
+            try {
+                windowManager.addView(card, lp)
+                proposalView = card
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to show proposal view", e)
+            }
+        }
+    }
+
+    fun dismissLanguageProposal() {
+        runOnMainThread {
+            proposalView?.let {
+                try { windowManager.removeView(it) } catch (_: Exception) {}
+                proposalView = null
+            }
         }
     }
 

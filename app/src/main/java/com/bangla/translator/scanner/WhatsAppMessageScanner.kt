@@ -4,25 +4,27 @@ import android.graphics.Rect
 import android.os.Build
 import android.view.accessibility.AccessibilityNodeInfo
 import com.bangla.translator.data.ScannedMessage
-import com.bangla.translator.translation.BengaliDetector
 import com.bangla.translator.translation.LanguageDetector
 import java.util.ArrayDeque
 import java.util.regex.Pattern
 
 data class ScanResult(
     val messages: List<ScannedMessage>,
-    val inputBarTop: Int?
+    val inputBarTop: Int?,
+    val detectedUninstalledLanguage: String? = null
 )
 
 /**
- * Robust scanner for detecting Bengali message elements in WhatsApp and WhatsApp Business.
- * Resilient against DOM/class/ID changes across WhatsApp updates by combining heuristic
- * structural filters with Unicode Bengali linguistic verification.
+ * High-performance WhatsApp message scanner supporting multiple simultaneous active language packs (up to 3)
+ * with on-the-fly detection of new foreign languages in chats.
  */
 class WhatsAppMessageScanner(
-    private val sourceLangCode: String = "bn",
+    private val activeSourceLanguages: Set<String> = setOf("bn"),
     private val ratioThreshold: Float = 0.20f
 ) {
+
+    // Secondary constructor for single language backwards compatibility
+    constructor(sourceLangCode: String, ratioThreshold: Float = 0.20f) : this(setOf(sourceLangCode), ratioThreshold)
 
     companion object {
         val SUPPORTED_PACKAGES = setOf("com.whatsapp", "com.whatsapp.w4b")
@@ -44,124 +46,133 @@ class WhatsAppMessageScanner(
     }
 
     /**
-     * Traverses the active accessibility node hierarchy to discover visible Bengali messages
-     * and the WhatsApp typing bar boundary.
-     * All traversed AccessibilityNodeInfo objects are guaranteed to be recycled.
-     *
-     * @param root The root node from AccessibilityService (e.g. rootInActiveWindow).
-     * @param screenBounds The screen viewport rectangle used to verify visibility.
-     * @param sessionGeneration Current session ID for constructing generation-safe display keys.
-     * @return ScanResult containing list of valid messages and the top Y of the typing bar.
+     * Traverses the active accessibility node hierarchy to discover visible messages in any of the
+     * active languages, and detects if an uninstalled language is present.
      */
     fun scanVisibleMessages(
         root: AccessibilityNodeInfo?,
         screenBounds: Rect,
         sessionGeneration: Long
     ): ScanResult {
-        if (root == null) return ScanResult(emptyList(), null)
+        if (root == null) {
+            return ScanResult(emptyList(), null, null)
+        }
 
-        // 1. Verify package belongs to WhatsApp
-        val rootPkg = root.packageName?.toString() ?: ""
-        if (rootPkg !in SUPPORTED_PACKAGES) {
-            return ScanResult(emptyList(), null)
+        val pkgName = root.packageName?.toString() ?: ""
+        if (pkgName !in SUPPORTED_PACKAGES) {
+            return ScanResult(emptyList(), null, null)
         }
 
         val results = mutableListOf<ScannedMessage>()
+        var detectedInputBarTop: Int? = null
+        var uninstalledLanguageDetected: String? = null
+
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(AccessibilityNodeInfo.obtain(root))
 
         val tempBounds = Rect()
-        var visitedCount = 0
-        var detectedInputBarTop: Int? = null
-        val maxNodesToVisit = 200 // Prevent deep tree performance bottlenecks
+        val pBounds = Rect()
+        var visitedNodesCount = 0
+        val maxNodesToTraverse = 600
 
         try {
-            while (!queue.isEmpty() && visitedCount < maxNodesToVisit) {
+            while (!queue.isEmpty() && visitedNodesCount < maxNodesToTraverse && results.size < 50) {
                 val node = queue.poll() ?: continue
-                visitedCount++
+                visitedNodesCount++
 
                 try {
-                    // Check node visibility
-                    if (node.isVisibleToUser) {
+                    // Check for WhatsApp typing/input bar to delimit scrollable chat bounds
+                    val isEditText = node.className?.toString()?.contains("EditText") == true ||
+                            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && node.isFocused && node.isEditable)
+
+                    if (isEditText && node.isVisibleToUser) {
                         node.getBoundsInScreen(tempBounds)
-
-                        val className = node.className?.toString() ?: ""
-                        val viewId = node.viewIdResourceName?.lowercase() ?: ""
-
-                        // Check if this node is the WhatsApp message input box or keyboard area
-                        if (node.isEditable || className.contains("EditText") || viewId.contains("entry")) {
-                            if (tempBounds.top > 0) {
-                                if (detectedInputBarTop == null || tempBounds.top < detectedInputBarTop!!) {
-                                    detectedInputBarTop = tempBounds.top
-                                }
+                        if (tempBounds.top > screenBounds.height() * 0.40f) {
+                            if (detectedInputBarTop == null || tempBounds.top < detectedInputBarTop) {
+                                detectedInputBarTop = tempBounds.top
                             }
                         }
+                    }
 
-                        // Ensure node is within current visible screen viewport
-                        val isHorizontallyVisible = tempBounds.right > screenBounds.left && tempBounds.left < screenBounds.right
-                        val isVerticallyVisible = tempBounds.bottom > screenBounds.top && tempBounds.top < screenBounds.bottom
+                    val isLeafOrText = node.childCount == 0 ||
+                            node.className?.toString()?.contains("TextView") == true ||
+                            node.className?.toString()?.contains("TextEmojiLabel") == true
 
-                        // ONLY extract from LEAF text nodes (childCount == 0) or TextViews to prevent
-                        // parent ViewGroup containers from creating duplicate overlapping overlays!
-                        val isLeafOrText = node.childCount == 0 ||
-                                className.contains("TextView") ||
-                                className.contains("TextEmojiLabel")
+                    if (node.isVisibleToUser && isLeafOrText) {
+                        node.getBoundsInScreen(tempBounds)
 
-                        if (isHorizontallyVisible && isVerticallyVisible && isLeafOrText && tempBounds.width() > 15 && tempBounds.height() > 15) {
-                            // Check if this node is inside a quoted/reply preview container
-                            if (!isInsideQuotedMessage(node)) {
-                                val candidateText = extractCandidateText(node)
-                                if (candidateText != null && isLikelyBengaliMessage(candidateText, node)) {
+                        if (tempBounds.width() > 15 && tempBounds.height() > 15 &&
+                            tempBounds.intersects(0, 0, screenBounds.width(), screenBounds.height())
+                        ) {
+                            val candidateText = node.text?.toString()
+
+                            if (!candidateText.isNullOrBlank() && !node.isEditable && !isNonMessageText(node, candidateText)) {
+                                if (!isInsideQuotedMessage(node)) {
                                     val normalized = candidateText.trim().replace(Regex("\\s+"), " ")
 
-                                    // Extract nearest message bubble container bounds for true bubble width & bottom edge
-                                    val bubbleBounds = Rect(tempBounds)
-                                    var currentParent: AccessibilityNodeInfo? = node.parent
-                                    var depth = 0
-                                    try {
-                                        while (currentParent != null && depth < 3) {
-                                            val pBounds = Rect()
-                                            currentParent.getBoundsInScreen(pBounds)
-                                            // A WhatsApp message bubble container encompasses the text and timestamp.
-                                            // It is wider than the leaf text, but not the entire screen width (< 94%)
-                                            if (pBounds.width() >= tempBounds.width() &&
-                                                pBounds.width() <= (screenBounds.width() * 0.94f).toInt() &&
-                                                pBounds.height() >= tempBounds.height() &&
-                                                pBounds.height() <= (screenBounds.height() * 0.75f).toInt()) {
-                                                bubbleBounds.set(pBounds)
-                                            }
-                                            val nextParent = currentParent.parent
-                                            if (currentParent != node) currentParent.recycle()
-                                            currentParent = nextParent
-                                            depth++
+                                    // 1. Check if candidate belongs to any of the active languages
+                                    var matchedLang: String? = null
+                                    for (lang in activeSourceLanguages) {
+                                        if (LanguageDetector.isTargetLanguageMessage(candidateText, lang, ratioThreshold)) {
+                                            matchedLang = lang
+                                            break
                                         }
-                                    } catch (_: Exception) {
-                                    } finally {
-                                        currentParent?.recycle()
                                     }
 
-                                    // 100% reliable WhatsApp outgoing vs incoming detection
-                                    val isOutgoing = bubbleBounds.right > screenBounds.width() * 0.78f || bubbleBounds.left > screenBounds.width() * 0.40f
-                                    val isIncoming = !isOutgoing
-                                    val yBucket = bubbleBounds.top / 80
-                                    val displayKey = "msg_${sessionGeneration}_${normalized.hashCode()}_${if (isIncoming) "in" else "out"}_b$yBucket"
-                                    
-                                    // Spatial de-duplication: avoid adding duplicate items if overlapping with an existing scanned message
-                                    val isDuplicate = results.any { existing ->
-                                        existing.normalizedText == normalized &&
-                                                Math.abs(existing.bounds.top - bubbleBounds.top) < 40 &&
-                                                Math.abs(existing.bounds.left - bubbleBounds.left) < 60
-                                    }
+                                    if (matchedLang != null) {
+                                        val bubbleBounds = Rect(tempBounds)
 
-                                    if (!isDuplicate) {
-                                        results.add(
-                                            ScannedMessage(
-                                                originalText = candidateText,
-                                                normalizedText = normalized,
-                                                bounds = Rect(bubbleBounds),
-                                                displayKey = displayKey
+                                        var currentParent: AccessibilityNodeInfo? = node.parent
+                                        var depth = 0
+                                        try {
+                                            while (currentParent != null && depth < 3) {
+                                                currentParent.getBoundsInScreen(pBounds)
+                                                if (pBounds.width() in (tempBounds.width() + 4)..screenBounds.width() &&
+                                                    pBounds.height() >= tempBounds.height() &&
+                                                    pBounds.height() <= (screenBounds.height() * 0.75f).toInt()
+                                                ) {
+                                                    bubbleBounds.set(pBounds)
+                                                }
+                                                val nextParent = currentParent.parent
+                                                if (currentParent != node) currentParent.recycle()
+                                                currentParent = nextParent
+                                                depth++
+                                            }
+                                        } catch (_: Exception) {
+                                        } finally {
+                                            currentParent?.recycle()
+                                        }
+
+                                        val isOutgoing = bubbleBounds.right > screenBounds.width() * 0.78f || bubbleBounds.left > screenBounds.width() * 0.40f
+                                        val isIncoming = !isOutgoing
+                                        val yBucket = bubbleBounds.top / 80
+                                        val displayKey = "msg_${sessionGeneration}_${normalized.hashCode()}_${if (isIncoming) "in" else "out"}_b$yBucket"
+
+                                        val isDuplicate = results.any { existing ->
+                                            existing.normalizedText == normalized &&
+                                                    Math.abs(existing.bounds.top - bubbleBounds.top) < 40 &&
+                                                    Math.abs(existing.bounds.left - bubbleBounds.left) < 60
+                                        }
+
+                                        if (!isDuplicate) {
+                                            results.add(
+                                                ScannedMessage(
+                                                    originalText = candidateText,
+                                                    normalizedText = normalized,
+                                                    bounds = Rect(bubbleBounds),
+                                                    displayKey = displayKey,
+                                                    languageCode = matchedLang
+                                                )
                                             )
-                                        )
+                                        }
+                                    } else {
+                                        // 2. Check if candidate text is in an uninstalled language (smart auto-detect)
+                                        if (uninstalledLanguageDetected == null) {
+                                            val detectedCode = LanguageDetector.detectLanguage(candidateText)
+                                            if (detectedCode != null && !activeSourceLanguages.contains(detectedCode)) {
+                                                uninstalledLanguageDetected = detectedCode
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -181,27 +192,20 @@ class WhatsAppMessageScanner(
                 }
             }
         } finally {
-            // Recycle any remaining nodes in the queue
             while (!queue.isEmpty()) {
                 queue.poll()?.recycle()
             }
         }
 
-        return ScanResult(results, detectedInputBarTop)
+        return ScanResult(results, detectedInputBarTop, uninstalledLanguageDetected)
     }
 
-    /**
-     * Inspects the node and its immediate ancestors to verify if it belongs
-     * to a quoted message / reply preview header, which should not be translated.
-     */
     private fun isInsideQuotedMessage(node: AccessibilityNodeInfo): Boolean {
-        // 1. Direct view ID check on the node
         val directId = node.viewIdResourceName?.lowercase() ?: ""
         if (directId.contains("quoted") || directId.contains("quote") || directId.contains("reply")) {
             return true
         }
 
-        // 2. Ancestor view ID check (up to 4 levels)
         var current: AccessibilityNodeInfo? = node
         try {
             for (depth in 0..3) {
@@ -224,55 +228,24 @@ class WhatsAppMessageScanner(
         return false
     }
 
-    /**
-     * Extracts text from node. Strictly prioritizes node.text for message contents
-     * to avoid extracting full container descriptions from parent layouts.
-     */
-    private fun extractCandidateText(node: AccessibilityNodeInfo): String? {
-        val text = node.text?.toString()
-        if (!text.isNullOrBlank()) return text
+    private fun isNonMessageText(node: AccessibilityNodeInfo, text: String): Boolean {
+        val lower = text.trim().lowercase()
 
-        // Only fallback to contentDescription if leaf node
-        if (node.childCount == 0) {
-            val desc = node.contentDescription?.toString()
-            if (!desc.isNullOrBlank() && !desc.startsWith("Voice message") && !desc.startsWith("Photo")) {
-                return desc
-            }
-        }
-        return null
-    }
+        if (PHONE_NUMBER_PATTERN.matcher(lower).matches()) return true
+        if (lower in STATUS_INDICATORS) return true
+        if (lower in ACTION_BUTTONS) return true
+        if (SYSTEM_NOTICE_PATTERNS.any { lower.contains(it) }) return true
 
-    /**
-     * Applies heuristic filters to discard non-message UI (headers, buttons, timestamps)
-     * before running Bengali Unicode ratio detection.
-     */
-    private fun isLikelyBengaliMessage(text: String, node: AccessibilityNodeInfo): Boolean {
-        val trimmed = text.trim()
-        if (trimmed.isEmpty()) return false
-
-        val lower = trimmed.lowercase()
-
-        // 1. Filter out common system banners & notices
-        for (pattern in SYSTEM_NOTICE_PATTERNS) {
-            if (lower.contains(pattern)) return false
+        val resId = node.viewIdResourceName?.lowercase() ?: ""
+        if (resId.contains("conversation_contact_name") ||
+            resId.contains("conversation_title") ||
+            resId.contains("toolbar") ||
+            resId.contains("action_bar") ||
+            resId.contains("tab_title")
+        ) {
+            return true
         }
 
-        // 2. Filter out status indicators & typing labels
-        if (lower in STATUS_INDICATORS) return false
-
-        // 3. Filter out action buttons
-        if (lower in ACTION_BUTTONS) return false
-
-        // 4. Filter phone numbers
-        if (PHONE_NUMBER_PATTERN.matcher(trimmed).matches()) return false
-
-        // 5. Filter interactive input fields (e.g. "Type a message" EditText)
-        val className = node.className?.toString() ?: ""
-        if (node.isEditable || className.contains("EditText")) {
-            return false
-        }
-
-        // 6. Linguistic check: Universal language detector
-        return LanguageDetector.isTargetLanguageMessage(trimmed, sourceLangCode, ratioThreshold)
+        return false
     }
 }

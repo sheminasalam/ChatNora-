@@ -488,7 +488,18 @@ data class ScannedMessage(
     val originalText: String,
     val normalizedText: String,
     val bounds: Rect,
-    val displayKey: String
+    val displayKey: String,
+    val languageCode: String = "bn"
+)
+
+data class TranslationResult(
+    val originalText: String,
+    val normalizedText: String,
+    val translatedText: String,
+    val sessionGeneration: Long,
+    val targetBounds: Rect,
+    val displayKey: String,
+    val languageCode: String = "bn"
 )
 
 sealed class ModelDownloadState {
@@ -578,11 +589,54 @@ class AppPreferences(context: Context) {
 
     var sourceLanguageCode: String
         get() = prefs.getString("key_source_lang", "bn") ?: "bn"
-        set(value) = prefs.edit().putString("key_source_lang", value).apply()
+        set(value) {
+            prefs.edit().putString("key_source_lang", value).apply()
+            addActiveSourceLanguage(value)
+        }
 
     var targetLanguageCode: String
         get() = prefs.getString("key_target_lang", "en") ?: "en"
         set(value) = prefs.edit().putString("key_target_lang", value).apply()
+
+    var isAutoDetectPromptEnabled: Boolean
+        get() = prefs.getBoolean("key_auto_detect_prompt", true)
+        set(value) = prefs.edit().putBoolean("key_auto_detect_prompt", value).apply()
+
+    var activeSourceLanguages: Set<String>
+        get() {
+            val raw = prefs.getString("key_active_source_langs", null)
+            return if (raw.isNullOrBlank()) {
+                setOf(sourceLanguageCode)
+            } else {
+                raw.split(",").filter { it.isNotBlank() }.toSet().ifEmpty { setOf("bn") }
+            }
+        }
+        set(value) {
+            val limited = value.take(MAX_ACTIVE_LANGUAGES).toSet()
+            prefs.edit().putString("key_active_source_langs", limited.joinToString(",")).apply()
+        }
+
+    fun addActiveSourceLanguage(code: String): Boolean {
+        val current = activeSourceLanguages.toMutableSet()
+        if (current.contains(code)) return true
+        if (current.size >= MAX_ACTIVE_LANGUAGES) return false
+        current.add(code)
+        activeSourceLanguages = current
+        return true
+    }
+
+    fun removeActiveSourceLanguage(code: String): Boolean {
+        val current = activeSourceLanguages.toMutableSet()
+        if (current.size <= 1 && current.contains(code)) return false
+        val removed = current.remove(code)
+        if (removed) {
+            activeSourceLanguages = current
+            if (sourceLanguageCode == code) sourceLanguageCode = current.firstOrNull() ?: "bn"
+        }
+        return removed
+    }
+
+    fun isLanguageActive(code: String): Boolean = activeSourceLanguages.contains(code.lowercase())
 
     val languagePairLabel: String
         get() {
@@ -600,6 +654,10 @@ class AppPreferences(context: Context) {
 
     fun unregisterListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
         prefs.unregisterOnSharedPreferenceChangeListener(listener)
+    }
+
+    companion object {
+        const val MAX_ACTIVE_LANGUAGES = 3
     }
 }
 `,
@@ -633,6 +691,31 @@ object LanguageDetector {
                 lower.any { it in "ñáéíóú¿¡üçàèêôœãõßäö" } || trimmed.any { it.code > 0x007F && it.isLetter() }
             }
         }
+    }
+
+    fun detectLanguage(text: CharSequence?): String? {
+        if (text.isNullOrBlank()) return null
+        val trimmed = text.toString().trim()
+        if (trimmed.length < 2) return null
+        if (URL_PATTERN.matcher(trimmed).matches() || TIMESTAMP_PATTERN.matcher(trimmed).matches()) return null
+
+        if (checkUnicodeBlock(trimmed, 0x0980..0x09FF, 0.20f)) return "bn"
+        if (checkUnicodeBlock(trimmed, 0x0600..0x06FF, 0.20f)) return "ar"
+        if (checkUnicodeBlock(trimmed, 0x0900..0x097F, 0.20f)) return "hi"
+        if (checkUnicodeBlock(trimmed, 0x0400..0x04FF, 0.20f)) return "ru"
+        if (checkJapanese(trimmed, 0.20f)) return "ja"
+        if (checkUnicodeBlock(trimmed, 0xAC00..0xD7AF, 0.20f)) return "ko"
+        if (checkUnicodeBlock(trimmed, 0x4E00..0x9FFF, 0.20f)) return "zh"
+        if (checkUnicodeBlock(trimmed, 0x0B80..0x0BFF, 0.20f)) return "ta"
+        if (checkUnicodeBlock(trimmed, 0x0C00..0x0C7F, 0.20f)) return "te"
+
+        val lower = trimmed.lowercase()
+        if (lower.any { it in "ñáéíóú¿¡ü" }) return "es"
+        if (lower.any { it in "éàèêëîïôöùûüçœ" }) return "fr"
+        if (lower.any { it in "äöüß" }) return "de"
+        if (lower.any { it in "ãõç" }) return "pt"
+
+        return null
     }
 
     private fun checkUnicodeBlock(text: String, range: IntRange, threshold: Float): Boolean {
@@ -722,13 +805,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
 object TranslationEngine {
     private val networkExecutor = Executors.newFixedThreadPool(3)
     private var currentSourceLang: String = TranslateLanguage.BENGALI
     private var currentTargetLang: String = TranslateLanguage.ENGLISH
-    var sharedTranslator: Translator? = null
+    private val activeTranslators = ConcurrentHashMap<String, Translator>()
     val cache = TranslationCache(500)
     private val _modelState = MutableStateFlow<ModelDownloadState>(ModelDownloadState.NotDownloaded)
     val modelState = _modelState.asStateFlow()
@@ -740,9 +824,6 @@ object TranslationEngine {
         if (srcMl != currentSourceLang || trgMl != currentTargetLang) {
             currentSourceLang = srcMl
             currentTargetLang = trgMl
-            sharedTranslator?.close()
-            sharedTranslator = null
-            cache.clear()
             checkModelAvailability(srcMl)
         }
     }
@@ -760,26 +841,27 @@ object TranslationEngine {
     }
 
     @Synchronized
-    private fun getOrCreateTranslator(): Translator {
-        val existing = sharedTranslator
+    fun getOrCreateTranslator(sourceLangCode: String = currentSourceLang): Translator {
+        val existing = activeTranslators[sourceLangCode]
         if (existing != null) return existing
         val options = TranslatorOptions.Builder()
-            .setSourceLanguage(currentSourceLang)
+            .setSourceLanguage(sourceLangCode)
             .setTargetLanguage(currentTargetLang)
             .build()
         val translator = Translation.getClient(options)
-        sharedTranslator = translator
+        activeTranslators[sourceLangCode] = translator
         return translator
     }
 
     @Synchronized
     fun prepareModelIfNeeded(
+        sourceLangCode: String = currentSourceLang,
         conditions: DownloadConditions = DownloadConditions.Builder().build(),
         onSuccess: (() -> Unit)? = null,
         onFailure: ((Exception) -> Unit)? = null
     ): Task<Void> {
         _modelState.value = ModelDownloadState.Downloading
-        val translator = getOrCreateTranslator()
+        val translator = getOrCreateTranslator(sourceLangCode)
         val downloadTask = translator.downloadModelIfNeeded(conditions)
         downloadTask.addOnSuccessListener {
             _modelState.value = ModelDownloadState.Ready
@@ -796,35 +878,39 @@ object TranslationEngine {
         val remoteModel = TranslateRemoteModel.Builder(sourceLangCode).build()
         modelManager.deleteDownloadedModel(remoteModel)
             .addOnCompleteListener {
-                sharedTranslator?.close()
-                sharedTranslator = null
+                activeTranslators.remove(sourceLangCode)?.close()
                 checkModelAvailability(sourceLangCode)
                 onComplete()
             }
     }
 
     fun close() {
-        sharedTranslator?.close()
-        sharedTranslator = null
+        for ((_, translator) in activeTranslators) {
+            try { translator.close() } catch (_: Exception) {}
+        }
+        activeTranslators.clear()
     }
 
     fun translate(
         text: String,
-        sourceCode: String = currentSourceLang,
+        sourceCode: String? = null,
         targetCode: String = currentTargetLang,
         onSuccess: (String) -> Unit,
         onFailure: ((Exception) -> Unit)? = null
     ) {
         val cleanText = text.trim()
         if (cleanText.isEmpty()) { onSuccess(""); return }
-        val cached = cache.get(cleanText)
+
+        val effectiveSource = sourceCode ?: LanguageDetector.detectLanguage(cleanText) ?: currentSourceLang
+        val cacheKey = "\$effectiveSource:\$cleanText"
+        val cached = cache.get(cacheKey) ?: cache.get(cleanText)
         if (cached != null) { onSuccess(cached); return }
 
         networkExecutor.execute {
             var translatedOnline: String? = null
             try {
                 val encodedText = URLEncoder.encode(cleanText, "UTF-8")
-                val urlStr = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=\$sourceCode&tl=\$targetCode&dt=t&q=\$encodedText"
+                val urlStr = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=\$effectiveSource&tl=\$targetCode&dt=t&q=\$encodedText"
                 val conn = URL(urlStr).openConnection() as HttpURLConnection
                 conn.connectTimeout = 3000
                 conn.readTimeout = 3000
@@ -840,15 +926,17 @@ object TranslationEngine {
             } catch (_: Exception) {}
 
             if (!translatedOnline.isNullOrBlank() && translatedOnline != cleanText) {
+                cache.put(cacheKey, translatedOnline)
                 cache.put(cleanText, translatedOnline)
                 onSuccess(translatedOnline)
                 return@execute
             }
 
             try {
-                val translator = getOrCreateTranslator()
+                val translator = getOrCreateTranslator(effectiveSource)
                 translator.translate(cleanText)
                     .addOnSuccessListener { res ->
+                        cache.put(cacheKey, res)
                         cache.put(cleanText, res)
                         onSuccess(res)
                     }
@@ -866,22 +954,30 @@ object TranslationEngine {
 import android.graphics.Rect
 import android.view.accessibility.AccessibilityNodeInfo
 import com.bangla.translator.data.ScannedMessage
-import com.bangla.translator.translation.BengaliDetector
 import com.bangla.translator.translation.LanguageDetector
 import java.util.ArrayDeque
 
+data class ScanResult(
+    val messages: List<ScannedMessage>,
+    val inputBarTop: Int?,
+    val detectedUninstalledLanguage: String? = null
+)
+
 class WhatsAppMessageScanner(
-    private val sourceLangCode: String = "bn",
+    private val activeSourceLanguages: Set<String> = setOf("bn"),
     private val ratioThreshold: Float = 0.20f
 ) {
+    constructor(sourceLangCode: String, ratioThreshold: Float = 0.20f) : this(setOf(sourceLangCode), ratioThreshold)
+
     companion object {
         val SUPPORTED_PACKAGES = setOf("com.whatsapp", "com.whatsapp.w4b")
     }
 
-    fun scanVisibleMessages(root: AccessibilityNodeInfo?, screenBounds: Rect, sessionGeneration: Long): List<ScannedMessage> {
-        if (root == null || root.packageName?.toString() !in SUPPORTED_PACKAGES) return emptyList()
+    fun scanVisibleMessages(root: AccessibilityNodeInfo?, screenBounds: Rect, sessionGeneration: Long): ScanResult {
+        if (root == null || root.packageName?.toString() !in SUPPORTED_PACKAGES) return ScanResult(emptyList(), null, null)
 
         val results = mutableListOf<ScannedMessage>()
+        var uninstalledDetected: String? = null
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(AccessibilityNodeInfo.obtain(root))
         val tempBounds = Rect()
@@ -899,16 +995,33 @@ class WhatsAppMessageScanner(
                         if (tempBounds.width() > 15 && tempBounds.height() > 15) {
                             if (!isInsideQuotedMessage(node)) {
                                 val text = node.text?.toString()
-                                if (!text.isNullOrBlank() && !node.isEditable && LanguageDetector.isTargetLanguageMessage(text, sourceLangCode, ratioThreshold)) {
-                                    val norm = text.trim().replace(Regex("\\\\s+"), " ")
-                                    val isDup = results.any {
-                                        it.normalizedText == norm &&
-                                        Math.abs(it.bounds.top - tempBounds.top) < 40 &&
-                                        Math.abs(it.bounds.left - tempBounds.left) < 60
+                                if (!text.isNullOrBlank() && !node.isEditable) {
+                                    var matchedLang: String? = null
+                                    for (lang in activeSourceLanguages) {
+                                        if (LanguageDetector.isTargetLanguageMessage(text, lang, ratioThreshold)) {
+                                            matchedLang = lang
+                                            break
+                                        }
                                     }
-                                    if (!isDup) {
-                                        val key = "gen_\${sessionGeneration}_\${norm.hashCode()}_\${tempBounds.left}_\${tempBounds.top}"
-                                        results.add(ScannedMessage(text, norm, Rect(tempBounds), key))
+
+                                    if (matchedLang != null) {
+                                        val norm = text.trim().replace(Regex("\\\\s+"), " ")
+                                        val isDup = results.any {
+                                            it.normalizedText == norm &&
+                                            Math.abs(it.bounds.top - tempBounds.top) < 40 &&
+                                            Math.abs(it.bounds.left - tempBounds.left) < 60
+                                        }
+                                        if (!isDup) {
+                                            val key = "gen_\${sessionGeneration}_\${norm.hashCode()}_\${tempBounds.left}_\${tempBounds.top}"
+                                            results.add(ScannedMessage(text, norm, Rect(tempBounds), key, matchedLang))
+                                        }
+                                    } else {
+                                        if (uninstalledDetected == null) {
+                                            val code = LanguageDetector.detectLanguage(text)
+                                            if (code != null && !activeSourceLanguages.contains(code)) {
+                                                uninstalledDetected = code
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -924,7 +1037,7 @@ class WhatsAppMessageScanner(
         } finally {
             while (!queue.isEmpty()) queue.poll()?.recycle()
         }
-        return results
+        return ScanResult(results, null, uninstalledDetected)
     }
 
     private fun isInsideQuotedMessage(node: AccessibilityNodeInfo): Boolean {
@@ -1223,10 +1336,80 @@ class OverlayController(private val context: Context, private val windowManager:
         mainHandler.post {
             expandedDisplayKey = null
             removeDismissBackdrop()
+            dismissLanguageProposal()
             for ((_, item) in activeOverlays) {
                 try { windowManager.removeView(item.view) } catch (_: Exception) {}
             }
             activeOverlays.clear()
+        }
+    }
+
+    private var proposalView: View? = null
+
+    fun showLanguageProposal(
+        languageItem: com.bangla.translator.data.LanguageItem,
+        onAccept: () -> Unit,
+        onDismiss: () -> Unit
+    ) {
+        mainHandler.post {
+            if (proposalView != null) return@post
+            val card = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setBackgroundResource(R.drawable.bg_overlay_incoming)
+                setPadding((12 * density).toInt(), (8 * density).toInt(), (12 * density).toInt(), (8 * density).toInt())
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            val tvText = TextView(context).apply {
+                text = "🌐 Detected \${languageItem.name}. Download pack (~30MB)?"
+                setTextColor(Color.WHITE)
+                textSize = 12f
+                setPadding(0, 0, (10 * density).toInt(), 0)
+            }
+            val btnAccept = TextView(context).apply {
+                text = "Download"
+                setTextColor(Color.parseColor("#25D366"))
+                textSize = 12f
+                paint.isFakeBoldText = true
+                setOnClickListener {
+                    dismissLanguageProposal()
+                    onAccept()
+                }
+            }
+            val btnDismiss = TextView(context).apply {
+                text = "  ✕"
+                setTextColor(Color.parseColor("#A0AEC0"))
+                textSize = 12f
+                setOnClickListener {
+                    dismissLanguageProposal()
+                    onDismiss()
+                }
+            }
+            card.addView(tvText)
+            card.addView(btnAccept)
+            card.addView(btnDismiss)
+
+            val lp = WindowManager.LayoutParams().apply {
+                width = WindowManager.LayoutParams.WRAP_CONTENT
+                height = WindowManager.LayoutParams.WRAP_CONTENT
+                type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
+                flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+                format = PixelFormat.TRANSLUCENT
+                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                y = (60 * density).toInt()
+            }
+            try {
+                windowManager.addView(card, lp)
+                proposalView = card
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun dismissLanguageProposal() {
+        mainHandler.post {
+            proposalView?.let {
+                try { windowManager.removeView(it) } catch (_: Exception) {}
+                proposalView = null
+            }
         }
     }
 
@@ -1247,6 +1430,7 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import com.bangla.translator.data.AppPreferences
 import com.bangla.translator.data.ScannedMessage
+import com.bangla.translator.data.SupportedLanguages
 import com.bangla.translator.overlay.OverlayController
 import com.bangla.translator.scanner.WhatsAppMessageScanner
 import com.bangla.translator.translation.TranslationEngine
@@ -1259,13 +1443,14 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
     private lateinit var messageScanner: WhatsAppMessageScanner
     private val mainHandler = Handler(Looper.getMainLooper())
     private val screenBounds = Rect()
+    private val dismissedLangsThisSession = mutableSetOf<String>()
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         appPreferences = AppPreferences(this)
         appPreferences.registerListener(this)
-        messageScanner = WhatsAppMessageScanner(appPreferences.sourceLanguageCode, appPreferences.bengaliRatioThreshold)
+        messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
         overlayController = OverlayController(this, wm)
         TranslationEngine.setLanguagePair(appPreferences.sourceLanguageCode, appPreferences.targetLanguageCode)
 
@@ -1291,6 +1476,7 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
             if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg.isNotEmpty()) {
                 sessionGeneration.incrementAndGet()
                 overlayController.removeAllOverlays()
+                dismissedLangsThisSession.clear()
             }
             return
         }
@@ -1300,15 +1486,40 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
         mainHandler.postDelayed({
             val root = rootInActiveWindow ?: return@postDelayed
             val currentGen = sessionGeneration.get()
-            val messages = messageScanner.scanVisibleMessages(root, screenBounds, currentGen)
+            val scanResult = messageScanner.scanVisibleMessages(root, screenBounds, currentGen)
             root.recycle()
 
+            val uninstalled = scanResult.detectedUninstalledLanguage
+            if (uninstalled != null && appPreferences.isAutoDetectPromptEnabled && !dismissedLangsThisSession.contains(uninstalled)) {
+                if (appPreferences.activeSourceLanguages.size < AppPreferences.MAX_ACTIVE_LANGUAGES) {
+                    val item = SupportedLanguages.findByCode(uninstalled)
+                    overlayController.showLanguageProposal(
+                        languageItem = item,
+                        onAccept = {
+                            dismissedLangsThisSession.add(uninstalled)
+                            appPreferences.addActiveSourceLanguage(uninstalled)
+                            TranslationEngine.prepareModelIfNeeded(
+                                sourceLangCode = item.mlKitCode,
+                                onSuccess = {
+                                    mainHandler.post {
+                                        messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
+                                    }
+                                }
+                            )
+                        },
+                        onDismiss = { dismissedLangsThisSession.add(uninstalled) }
+                    )
+                }
+            }
+
+            val messages = scanResult.messages
             val currentlyVisible = messages.map { it.displayKey }.toSet()
             overlayController.reconcileVisibleOverlays(currentlyVisible)
 
             for (msg in messages) {
                 TranslationEngine.translate(
                     text = msg.normalizedText,
+                    sourceCode = msg.languageCode,
                     onSuccess = { translated ->
                         if (sessionGeneration.get() == currentGen) {
                             overlayController.showOverlay(
@@ -1329,8 +1540,8 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
         if (key == "key_overlay_enabled") {
             if (!appPreferences.isOverlayEnabled) overlayController.removeAllOverlays()
-        } else if (key == "key_bengali_ratio" || key == "key_source_lang" || key == "key_target_lang") {
-            messageScanner = WhatsAppMessageScanner(appPreferences.sourceLanguageCode, appPreferences.bengaliRatioThreshold)
+        } else if (key == "key_bengali_ratio" || key == "key_source_lang" || key == "key_target_lang" || key == "key_active_source_langs") {
+            messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
             TranslationEngine.setLanguagePair(appPreferences.sourceLanguageCode, appPreferences.targetLanguageCode)
             overlayController.removeAllOverlays()
         }
@@ -1383,15 +1594,23 @@ class NotificationTranslationService : NotificationListenerService() {
         val title = extras.getCharSequence("android.title")?.toString() ?: ""
         val text = extras.getCharSequence("android.text")?.toString() ?: return
 
-        if (LanguageDetector.isTargetLanguageMessage(text, appPreferences.sourceLanguageCode, appPreferences.bengaliRatioThreshold)) {
-            TranslationEngine.translate(
-                text = text,
-                onSuccess = { translatedText ->
-                    postTranslatedNotification(pkg, title, text, translatedText, sbn.id)
-                },
-                onFailure = {}
-            )
+        var matchedLang: String? = null
+        for (lang in appPreferences.activeSourceLanguages) {
+            if (LanguageDetector.isTargetLanguageMessage(text, lang, appPreferences.bengaliRatioThreshold)) {
+                matchedLang = lang
+                break
+            }
         }
+        if (matchedLang == null) return
+
+        TranslationEngine.translate(
+            text = text,
+            sourceCode = matchedLang,
+            onSuccess = { translatedText ->
+                postTranslatedNotification(pkg, title, text, translatedText, sbn.id)
+            },
+            onFailure = {}
+        )
     }
 
     private fun postTranslatedNotification(originalPkg: String, senderTitle: String, originalText: String, translatedText: String, notificationId: Int) {

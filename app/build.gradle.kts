@@ -69,8 +69,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
-    // Google ML Kit On-Device Translation
+    // Google ML Kit On-Device Translation & Language Identification
     implementation("com.google.mlkit:translate:17.0.3")
+    implementation("com.google.mlkit:language-id:17.0.6")
 
     // Unit Testing
     testImplementation("junit:junit:4.13.2")

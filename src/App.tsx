@@ -291,6 +291,47 @@ export default function App() {
   const [copied, setCopied] = useState<boolean>(false);
   const [expandedMsgId, setExpandedMsgId] = useState<string | null>(null);
   const [selectedLang, setSelectedLang] = useState<'bn' | 'es' | 'hi' | 'fr' | 'ar' | 'de'>('bn');
+  
+  // Smart Multi-Language Active Packs (Max 3 to protect RAM & Storage)
+  const [activePacks, setActivePacks] = useState<string[]>(['bn']);
+  const [isAutoDetectPromptEnabled, setIsAutoDetectPromptEnabled] = useState<boolean>(true);
+  const [downloadingPack, setDownloadingPack] = useState<string | null>(null);
+  const [dismissedPacks, setDismissedPacks] = useState<string[]>([]);
+
+  const handleDownloadPack = (langCode: string) => {
+    if (activePacks.includes(langCode)) return;
+    if (activePacks.length >= 3) {
+      alert("Maximum 3 active language packs reached to protect phone RAM & storage. Please remove one language first.");
+      return;
+    }
+    setDownloadingPack(langCode);
+    const langLabel = multiLangChats[langCode as keyof typeof multiLangChats]?.label || langCode;
+    setStatusLog(prev => [
+      `[SMART DETECT] Auto-detected ${langLabel}. Downloading ML Kit model (~30MB) in background...`,
+      ...prev.slice(0, 8)
+    ]);
+    setTimeout(() => {
+      setActivePacks(prev => [...prev, langCode]);
+      setDownloadingPack(null);
+      setStatusLog(prev => [
+        `[PACK ACTIVATED] ${langLabel} (~30MB) installed! Active slots: ${activePacks.length + 1}/3. In-chat translations rendered.`,
+        ...prev.slice(0, 8)
+      ]);
+    }, 850);
+  };
+
+  const handleRemovePack = (langCode: string) => {
+    if (activePacks.length <= 1) {
+      alert("At least 1 language pack must remain active.");
+      return;
+    }
+    setActivePacks(prev => prev.filter(p => p !== langCode));
+    const langLabel = multiLangChats[langCode as keyof typeof multiLangChats]?.label || langCode;
+    setStatusLog(prev => [
+      `[PURGED] ${langLabel} pack deleted. 30MB storage freed. Active slots: ${activePacks.length - 1}/3.`,
+      ...prev.slice(0, 8)
+    ]);
+  };
 
   // Multi-Language Chats Catalog
   const multiLangChats: Record<'bn' | 'es' | 'hi' | 'fr' | 'ar' | 'de', { label: string; flag: string; nativeName: string; messages: MessageBubble[] }> = useMemo(() => ({
@@ -827,9 +868,53 @@ export default function App() {
                         </span>
                       </div>
 
+                      {/* Floating Language Pack Proposal Banner (when an uninstalled language is detected) */}
+                      {!activePacks.includes(selectedLang) && isAutoDetectPromptEnabled && !dismissedPacks.includes(selectedLang) && (
+                        <div className="bg-gradient-to-r from-emerald-950/95 via-slate-900 to-slate-900 border border-emerald-500/60 rounded-xl p-2.5 shadow-xl flex items-center justify-between gap-2 animate-in fade-in slide-in-from-top-2 duration-300 z-20">
+                          <div className="flex items-center gap-2 text-left">
+                            <span className="text-xl">{multiLangChats[selectedLang].flag}</span>
+                            <div>
+                              <div className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                                <span>{multiLangChats[selectedLang].label} detected in chat</span>
+                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-900/80 text-emerald-300 font-semibold border border-emerald-700/60">30MB</span>
+                              </div>
+                              <div className="text-[10px] text-slate-300">
+                                Download offline model to enable instant translation?
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={() => handleDownloadPack(selectedLang)}
+                              disabled={downloadingPack === selectedLang}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] shadow transition flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                            >
+                              {downloadingPack === selectedLang ? (
+                                <>
+                                  <div className="w-2.5 h-2.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                  <span>Installing...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Download className="w-3 h-3" />
+                                  <span>Download</span>
+                                </>
+                              )}
+                            </button>
+                            <button
+                              onClick={() => setDismissedPacks(prev => [...prev, selectedLang])}
+                              className="w-5 h-5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center text-xs cursor-pointer"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
                       {chatMessages[activeChat].map((msg) => {
                         const isExpanded = expandedMsgId === msg.id;
                         const isOtherExpanded = expandedMsgId !== null && !isExpanded;
+                        const isPackActive = activePacks.includes(selectedLang);
 
                         return (
                           <div
@@ -851,7 +936,7 @@ export default function App() {
                               </div>
 
                               {/* Collapsed State: Middle-side badge away from outer screen edge */}
-                              {overlayEnabled && msg.translated && !isExpanded && !isOtherExpanded && (
+                              {overlayEnabled && msg.translated && isPackActive && !isExpanded && !isOtherExpanded && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -866,6 +951,21 @@ export default function App() {
                                 >
                                   <Languages className="w-2.5 h-2.5" />
                                   <span className="text-[9px] font-bold">EN</span>
+                                </button>
+                              )}
+
+                              {/* Uninstalled Language Pack Prompt Badge */}
+                              {overlayEnabled && msg.translated && !isPackActive && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDownloadPack(selectedLang);
+                                  }}
+                                  className="flex items-center gap-1 px-1.5 py-0.5 rounded-[8px] border border-dashed border-slate-600 bg-slate-800/80 text-slate-400 hover:text-emerald-300 hover:border-emerald-500 text-[9px] transition shrink-0 cursor-pointer"
+                                  title={`Download ${multiLangChats[selectedLang].label} pack to translate`}
+                                >
+                                  <Download className="w-2.5 h-2.5" />
+                                  <span>+ {multiLangChats[selectedLang].label.slice(0, 4)}</span>
                                 </button>
                               )}
                             </div>
@@ -929,6 +1029,138 @@ export default function App() {
 
             {/* Simulator Controls & Diagnostic Telemetry */}
             <div className="lg:col-span-6 space-y-6">
+              {/* SMART MULTI-LANGUAGE PACKS & RESOURCE MONITOR */}
+              <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl p-5 shadow-xl relative overflow-hidden">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-600/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                      <Languages className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-sm text-white flex items-center gap-1.5">
+                        <span>Smart Multi-Language Packs</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-semibold">
+                          Active: {activePacks.length}/3 Slots
+                        </span>
+                      </h3>
+                      <p className="text-[11px] text-slate-400">Limit 3 simultaneous language pairs to ensure 0 battery drain and minimal RAM.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isAutoDetectPromptEnabled}
+                        onChange={(e) => setIsAutoDetectPromptEnabled(e.target.checked)}
+                        className="rounded accent-emerald-500 cursor-pointer"
+                      />
+                      <span className="text-[11px] font-medium text-emerald-300">Auto-Detect</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* 3 Active Language Slots */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mb-4">
+                  {[0, 1, 2].map((slotIdx) => {
+                    const packCode = activePacks[slotIdx];
+                    const packInfo = packCode ? multiLangChats[packCode as keyof typeof multiLangChats] : null;
+
+                    return (
+                      <div
+                        key={slotIdx}
+                        className={`p-3 rounded-xl border flex flex-col justify-between min-h-[90px] transition ${
+                          packInfo
+                            ? 'bg-slate-950/80 border-emerald-600/40 shadow-sm'
+                            : 'bg-slate-950/30 border-dashed border-slate-800 text-slate-500'
+                        }`}
+                      >
+                        {packInfo ? (
+                          <>
+                            <div className="flex items-start justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-lg">{packInfo.flag}</span>
+                                <div>
+                                  <div className="text-xs font-bold text-white leading-tight">{packInfo.label}</div>
+                                  <div className="text-[10px] text-emerald-400 font-medium">{packInfo.nativeName}</div>
+                                </div>
+                              </div>
+                              {activePacks.length > 1 && (
+                                <button
+                                  onClick={() => handleRemovePack(packCode)}
+                                  className="text-slate-500 hover:text-rose-400 text-xs px-1"
+                                  title="Delete model (~30MB) from device"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+                            <div className="mt-2 pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[10px]">
+                              <span className="text-slate-400">Offline Model:</span>
+                              <span className="font-mono text-emerald-300 font-semibold">30 MB Ready</span>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="h-full flex flex-col items-center justify-center text-center py-2">
+                            <span className="text-[10px] font-medium text-slate-500 mb-1">Slot #{slotIdx + 1} (Available)</span>
+                            <span className="text-[9px] text-slate-600">Auto-installs when foreign chat is detected</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Resource Impact & Phone Health Meters */}
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 text-xs space-y-2.5">
+                  <div className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+                    <span className="flex items-center gap-1"><Cpu className="w-3.5 h-3.5 text-emerald-400" /> Phone Resource Impact (Audited)</span>
+                    <span className="text-emerald-400 font-mono text-[10px]">100% On-Device Safe</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                        <span>Device Storage:</span>
+                        <span className="font-mono font-bold text-emerald-300">{activePacks.length * 30} MB / 90 MB</span>
+                      </div>
+                      <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        <div
+                          className="bg-emerald-500 h-full rounded-full transition-all duration-300"
+                          style={{ width: `${(activePacks.length / 3) * 100}%` }}
+                        ></div>
+                      </div>
+                      <div className="text-[9px] text-slate-500 mt-1">&lt;0.1% of phone flash storage</div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                        <span>RAM Overhead:</span>
+                        <span className="font-mono font-bold text-sky-300">~{activePacks.length * 14 + 8} MB</span>
+                      </div>
+                      <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        <div
+                          className="bg-sky-500 h-full rounded-full transition-all duration-300"
+                          style={{ width: `${((activePacks.length * 14 + 8) / 50) * 100}%` }}
+                        ></div>
+                      </div>
+                      <div className="text-[9px] text-slate-500 mt-1">Lightweight ML Kit inference</div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                        <span>Detection CPU:</span>
+                        <span className="font-mono font-bold text-emerald-300">&lt; 0.2%</span>
+                      </div>
+                      <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-emerald-500 h-full rounded-full w-[5%]"></div>
+                      </div>
+                      <div className="text-[9px] text-slate-500 mt-1">0 CPU Unicode script filters</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Session Control Panel */}
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
                 <div className="flex items-center justify-between mb-4">

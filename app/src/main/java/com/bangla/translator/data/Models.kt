@@ -16,13 +16,14 @@ data class DisplayKey(
 }
 
 /**
- * Message detected from the WhatsApp accessibility tree.
+ * Message detected from the WhatsApp accessibility tree with detected language code.
  */
 data class ScannedMessage(
     val originalText: String,
     val normalizedText: String,
     val bounds: Rect,
-    val displayKey: String
+    val displayKey: String,
+    val languageCode: String = "bn"
 )
 
 /**
@@ -34,11 +35,12 @@ data class TranslationResult(
     val translatedText: String,
     val sessionGeneration: Long,
     val targetBounds: Rect,
-    val displayKey: String
+    val displayKey: String,
+    val languageCode: String = "bn"
 )
 
 /**
- * Represents the status of the local ML Kit Bengali-English model.
+ * Represents the status of the local ML Kit translation model.
  */
 sealed class ModelDownloadState {
     object NotDownloaded : ModelDownloadState()

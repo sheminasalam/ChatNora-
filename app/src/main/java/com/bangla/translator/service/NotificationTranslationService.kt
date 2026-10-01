@@ -63,14 +63,20 @@ class NotificationTranslationService : NotificationListenerService() {
 
         if (text.isBlank()) return
 
-        // Check if message text is in target foreign language
-        if (!LanguageDetector.isTargetLanguageMessage(text, appPreferences.sourceLanguageCode, appPreferences.bengaliRatioThreshold)) {
-            return
+        // Check if message text is in any active foreign language
+        var matchedSourceLang: String? = null
+        for (lang in appPreferences.activeSourceLanguages) {
+            if (LanguageDetector.isTargetLanguageMessage(text, lang, appPreferences.bengaliRatioThreshold)) {
+                matchedSourceLang = lang
+                break
+            }
         }
+        if (matchedSourceLang == null) return
 
         // Translate locally
         TranslationEngine.translate(
             text = text,
+            sourceCode = matchedSourceLang,
             onSuccess = { translatedText ->
                 postTranslatedNotification(
                     originalPkg = pkgName,

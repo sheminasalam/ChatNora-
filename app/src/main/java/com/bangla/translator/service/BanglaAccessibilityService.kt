@@ -69,6 +69,7 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
     private var currentTypingBarTop: Int? = null
     private val isWatchdogActive = AtomicBoolean(false)
     private var nonForegroundCount = 0
+    private val dismissedLangsThisSession = mutableSetOf<String>()
 
     // Debounced scan task
     private val scanRunnable = Runnable {
@@ -106,7 +107,7 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
         appPreferences = AppPreferences(this)
         appPreferences.registerListener(this)
 
-        messageScanner = WhatsAppMessageScanner(appPreferences.sourceLanguageCode, appPreferences.bengaliRatioThreshold)
+        messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
         overlayController = OverlayController(this, windowManager)
         TranslationEngine.setLanguagePair(appPreferences.sourceLanguageCode, appPreferences.targetLanguageCode)
 
@@ -236,6 +237,33 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
         val scannedMessages = scanResult.messages
         currentTypingBarTop = scanResult.inputBarTop
 
+        // Check if an uninstalled language is discovered and propose language pack
+        val uninstalled = scanResult.detectedUninstalledLanguage
+        if (uninstalled != null && appPreferences.isAutoDetectPromptEnabled && !dismissedLangsThisSession.contains(uninstalled)) {
+            if (appPreferences.activeSourceLanguages.size < AppPreferences.MAX_ACTIVE_LANGUAGES) {
+                val item = com.bangla.translator.data.SupportedLanguages.findByCode(uninstalled)
+                overlayController.showLanguageProposal(
+                    languageItem = item,
+                    onAccept = {
+                        dismissedLangsThisSession.add(uninstalled)
+                        appPreferences.addActiveSourceLanguage(uninstalled)
+                        TranslationEngine.prepareModelIfNeeded(
+                            sourceLangCode = item.mlKitCode,
+                            onSuccess = {
+                                mainHandler.post {
+                                    messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
+                                    performHierarchyScan()
+                                }
+                            }
+                        )
+                    },
+                    onDismiss = {
+                        dismissedLangsThisSession.add(uninstalled)
+                    }
+                )
+            }
+        }
+
         val currentVisibleKeySet = HashSet<String>()
         var hasNewMessageArrived = false
         for (msg in scannedMessages) {
@@ -254,7 +282,7 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
         // Remove overlays for messages that have scrolled away
         overlayController.reconcileVisibleOverlays(currentVisibleKeySet)
 
-        // Process each visible Bengali message
+        // Process each visible message
         for (msg in scannedMessages) {
             processMessageTranslation(msg, currentGen)
         }
@@ -279,6 +307,7 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
 
         TranslationEngine.translate(
             text = msg.normalizedText,
+            sourceCode = msg.languageCode,
             onSuccess = { translatedText ->
                 inFlightSet.remove(inFlightKey)
                 mainHandler.post {
@@ -395,8 +424,12 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
             } else {
                 scheduleDebouncedScan()
             }
-        } else if (key == AppPreferences.KEY_BENGALI_RATIO || key == AppPreferences.KEY_SOURCE_LANG || key == AppPreferences.KEY_TARGET_LANG) {
-            messageScanner = WhatsAppMessageScanner(appPreferences.sourceLanguageCode, appPreferences.bengaliRatioThreshold)
+        } else if (key == AppPreferences.KEY_BENGALI_RATIO ||
+            key == AppPreferences.KEY_SOURCE_LANG ||
+            key == AppPreferences.KEY_TARGET_LANG ||
+            key == AppPreferences.KEY_ACTIVE_SOURCE_LANGS
+        ) {
+            messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
             TranslationEngine.setLanguagePair(appPreferences.sourceLanguageCode, appPreferences.targetLanguageCode)
             overlayController.removeAllOverlays()
             scheduleDebouncedScan()
