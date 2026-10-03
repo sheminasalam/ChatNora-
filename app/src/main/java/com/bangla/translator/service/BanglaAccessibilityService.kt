@@ -271,6 +271,11 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
                 onReplacePair = { oldSourceCode ->
                     dismissedLangsThisSession.add(uninstalled)
                     appPreferences.replaceLanguagePair(oldSourceCode, uninstalled, "en")
+                    val remaining = appPreferences.activeSourceLanguages
+                    if (!remaining.contains(oldSourceCode)) {
+                        val oldMeta = com.bangla.translator.data.SupportedLanguages.findByCode(oldSourceCode)
+                        com.bangla.translator.translation.TranslationEngine.deleteModel(oldMeta.mlKitCode)
+                    }
                     com.bangla.translator.translation.TranslationEngine.prepareModelIfNeeded(
                         sourceLangCode = item.mlKitCode,
                         onSuccess = {

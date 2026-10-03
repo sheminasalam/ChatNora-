@@ -65,6 +65,7 @@ class MainActivity : AppCompatActivity() {
         updateAccessibilityStatus()
         checkNotificationListenerStatus()
         TranslationEngine.checkModelAvailability()
+        TranslationEngine.purgeInactiveModels(appPreferences.activeSourceLanguages)
     }
 
     private fun setupLanguageSpinners() {
@@ -94,8 +95,15 @@ class MainActivity : AppCompatActivity() {
                 val selected = allLanguages[position]
                 val pairs = appPreferences.getLanguagePairs().toMutableList()
                 if (pairs.isNotEmpty() && pairs[0].sourceCode != selected.code) {
+                    val oldCode = pairs[0].sourceCode
                     pairs[0] = com.bangla.translator.data.LanguagePairPreference(selected.code, appPreferences.targetLanguageCode)
                     appPreferences.saveLanguagePairs(pairs)
+                    val remaining = appPreferences.activeSourceLanguages
+                    if (!remaining.contains(oldCode)) {
+                        val oldMeta = SupportedLanguages.findByCode(oldCode)
+                        TranslationEngine.deleteModel(oldMeta.mlKitCode)
+                    }
+                    TranslationEngine.prepareModelIfNeeded(sourceLangCode = selected.mlKitCode)
                     updateLanguagePairSummary()
                 }
             }
@@ -108,8 +116,15 @@ class MainActivity : AppCompatActivity() {
                 val selected = allLanguages[position]
                 val pairs = appPreferences.getLanguagePairs().toMutableList()
                 if (pairs.size > 1 && pairs[1].sourceCode != selected.code) {
+                    val oldCode = pairs[1].sourceCode
                     pairs[1] = com.bangla.translator.data.LanguagePairPreference(selected.code, appPreferences.targetLanguageCode)
                     appPreferences.saveLanguagePairs(pairs)
+                    val remaining = appPreferences.activeSourceLanguages
+                    if (!remaining.contains(oldCode)) {
+                        val oldMeta = SupportedLanguages.findByCode(oldCode)
+                        TranslationEngine.deleteModel(oldMeta.mlKitCode)
+                    }
+                    TranslationEngine.prepareModelIfNeeded(sourceLangCode = selected.mlKitCode)
                     updateLanguagePairSummary()
                 }
             }
@@ -122,8 +137,15 @@ class MainActivity : AppCompatActivity() {
                 val selected = allLanguages[position]
                 val pairs = appPreferences.getLanguagePairs().toMutableList()
                 if (pairs.size > 2 && pairs[2].sourceCode != selected.code) {
+                    val oldCode = pairs[2].sourceCode
                     pairs[2] = com.bangla.translator.data.LanguagePairPreference(selected.code, appPreferences.targetLanguageCode)
                     appPreferences.saveLanguagePairs(pairs)
+                    val remaining = appPreferences.activeSourceLanguages
+                    if (!remaining.contains(oldCode)) {
+                        val oldMeta = SupportedLanguages.findByCode(oldCode)
+                        TranslationEngine.deleteModel(oldMeta.mlKitCode)
+                    }
+                    TranslationEngine.prepareModelIfNeeded(sourceLangCode = selected.mlKitCode)
                     updateLanguagePairSummary()
                 }
             }
@@ -151,11 +173,21 @@ class MainActivity : AppCompatActivity() {
             showAddLanguagePairDialog()
         }
 
-        // Remove buttons
+        // Remove buttons (purges local model pack from storage & RAM)
         binding.btnRemoveSlot2.setOnClickListener {
             val pairs = appPreferences.getLanguagePairs()
             if (pairs.size > 1) {
-                appPreferences.removeLanguagePair(pairs[1].sourceCode)
+                val removedCode = pairs[1].sourceCode
+                appPreferences.removeLanguagePair(removedCode)
+                val remainingCodes = appPreferences.activeSourceLanguages
+                if (!remainingCodes.contains(removedCode)) {
+                    val langMeta = SupportedLanguages.findByCode(removedCode)
+                    TranslationEngine.deleteModel(langMeta.mlKitCode) {
+                        runOnUiThread {
+                            Toast.makeText(this@MainActivity, "Deleted ${langMeta.name} pack (~30MB). Storage & RAM freed.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
                 refreshLanguageSlotsUI()
             }
         }
@@ -163,7 +195,17 @@ class MainActivity : AppCompatActivity() {
         binding.btnRemoveSlot3.setOnClickListener {
             val pairs = appPreferences.getLanguagePairs()
             if (pairs.size > 2) {
-                appPreferences.removeLanguagePair(pairs[2].sourceCode)
+                val removedCode = pairs[2].sourceCode
+                appPreferences.removeLanguagePair(removedCode)
+                val remainingCodes = appPreferences.activeSourceLanguages
+                if (!remainingCodes.contains(removedCode)) {
+                    val langMeta = SupportedLanguages.findByCode(removedCode)
+                    TranslationEngine.deleteModel(langMeta.mlKitCode) {
+                        runOnUiThread {
+                            Toast.makeText(this@MainActivity, "Deleted ${langMeta.name} pack (~30MB). Storage & RAM freed.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
                 refreshLanguageSlotsUI()
             }
         }

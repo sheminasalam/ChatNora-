@@ -158,9 +158,9 @@ object TranslationEngine {
     }
 
     /**
-     * Deletes a downloaded model to free device storage.
+     * Deletes a downloaded model to free device storage and releases RAM.
      */
-    fun deleteModel(sourceLangCode: String = currentSourceLang, onComplete: () -> Unit) {
+    fun deleteModel(sourceLangCode: String = currentSourceLang, onComplete: (() -> Unit)? = null) {
         val modelManager = RemoteModelManager.getInstance()
         val remoteModel = TranslateRemoteModel.Builder(sourceLangCode).build()
 
@@ -168,7 +168,30 @@ object TranslationEngine {
             .addOnCompleteListener {
                 activeTranslators.remove(sourceLangCode)?.close()
                 checkModelAvailability(sourceLangCode)
-                onComplete()
+                onComplete?.invoke()
+            }
+    }
+
+    /**
+     * Purges downloaded ML Kit models that are no longer part of the user's active language pairs,
+     * freeing up phone storage (~30MB per pack) and releasing native memory buffers immediately.
+     */
+    fun purgeInactiveModels(activeSourceCodes: Set<String>, onComplete: (() -> Unit)? = null) {
+        val activeMlKitCodes = activeSourceCodes.map { SupportedLanguages.findByCode(it).mlKitCode }.toSet()
+        val modelManager = RemoteModelManager.getInstance()
+        modelManager.getDownloadedModels(TranslateRemoteModel::class.java)
+            .addOnSuccessListener { models ->
+                for (model in models) {
+                    if (model.language !in activeMlKitCodes) {
+                        Log.i(TAG, "Deleting orphaned language model from storage: ${model.language}")
+                        activeTranslators.remove(model.language)?.close()
+                        modelManager.deleteDownloadedModel(model)
+                    }
+                }
+                onComplete?.invoke()
+            }
+            .addOnFailureListener {
+                onComplete?.invoke()
             }
     }
 

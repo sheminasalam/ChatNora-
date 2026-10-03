@@ -962,14 +962,32 @@ object TranslationEngine {
         return downloadTask
     }
 
-    fun deleteModel(sourceLangCode: String = currentSourceLang, onComplete: () -> Unit) {
+    fun deleteModel(sourceLangCode: String = currentSourceLang, onComplete: (() -> Unit)? = null) {
         val modelManager = RemoteModelManager.getInstance()
         val remoteModel = TranslateRemoteModel.Builder(sourceLangCode).build()
         modelManager.deleteDownloadedModel(remoteModel)
             .addOnCompleteListener {
                 activeTranslators.remove(sourceLangCode)?.close()
                 checkModelAvailability(sourceLangCode)
-                onComplete()
+                onComplete?.invoke()
+            }
+    }
+
+    fun purgeInactiveModels(activeSourceCodes: Set<String>, onComplete: (() -> Unit)? = null) {
+        val activeMlKitCodes = activeSourceCodes.map { SupportedLanguages.findByCode(it).mlKitCode }.toSet()
+        val modelManager = RemoteModelManager.getInstance()
+        modelManager.getDownloadedModels(TranslateRemoteModel::class.java)
+            .addOnSuccessListener { models ->
+                for (model in models) {
+                    if (model.language !in activeMlKitCodes) {
+                        activeTranslators.remove(model.language)?.close()
+                        modelManager.deleteDownloadedModel(model)
+                    }
+                }
+                onComplete?.invoke()
+            }
+            .addOnFailureListener {
+                onComplete?.invoke()
             }
     }
 
@@ -1789,6 +1807,11 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
                     onReplacePair = { oldSourceCode ->
                         dismissedLangsThisSession.add(uninstalled)
                         appPreferences.replaceLanguagePair(oldSourceCode, uninstalled, "en")
+                        val remaining = appPreferences.activeSourceLanguages
+                        if (!remaining.contains(oldSourceCode)) {
+                            val oldMeta = SupportedLanguages.findByCode(oldSourceCode)
+                            TranslationEngine.deleteModel(oldMeta.mlKitCode)
+                        }
                         TranslationEngine.prepareModelIfNeeded(
                             sourceLangCode = item.mlKitCode,
                             onSuccess = {

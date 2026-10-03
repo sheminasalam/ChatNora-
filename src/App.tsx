@@ -461,6 +461,9 @@ export default function App() {
 
   // Derived active language codes
   const activePacks = useMemo(() => activePairs.map(p => p.sourceCode), [activePairs]);
+  // Locally downloaded offline ML Kit models in phone storage (~30MB each).
+  // Automatically deleted when the language is removed from active pairs to prevent memory/storage bloat.
+  const [downloadedPacks, setDownloadedPacks] = useState<string[]>(['bn']);
   const [isAutoDetectPromptEnabled, setIsAutoDetectPromptEnabled] = useState<boolean>(true);
   const [downloadingPack, setDownloadingPack] = useState<string | null>(null);
   const [dismissedPacks, setDismissedPacks] = useState<string[]>([]);
@@ -563,28 +566,43 @@ export default function App() {
         sizeMb: 30
       };
       setActivePairs(prev => [...prev, newPair]);
+      setDownloadedPacks(prev => Array.from(new Set([...prev, langMeta.code])));
       setDownloadingPack(null);
       setShowAddPairModal(false);
       showToast(`Activated ${langMeta.label} ↔ ${newPair.targetLabel} pair!`);
       setStatusLog(prev => [
-        `[PAIR ACTIVE] Slot #${activePairs.length + 1} activated: ${langMeta.label} (${langMeta.nativeName}) ↔ English. Ready for offline translations!`,
+        `[PAIR ACTIVE] Slot #${activePairs.length + 1} activated: ${langMeta.label} (${langMeta.nativeName}) ↔ English. Downloaded on-device model (~30MB).`,
         ...prev.slice(0, 8)
       ]);
     }, 700);
   };
 
-  // Remove a language pair
+  // Remove a language pair (also deletes downloaded on-device model pack to free storage & RAM)
   const handleRemoveLanguagePair = (pairId: string) => {
     if (activePairs.length <= 1) {
       showToast("At least 1 language pair must remain active.");
       return;
     }
     const targetPair = activePairs.find(p => p.id === pairId);
-    setActivePairs(prev => prev.filter(p => p.id !== pairId));
-    if (targetPair) {
+    if (!targetPair) return;
+
+    const remainingPairs = activePairs.filter(p => p.id !== pairId);
+    setActivePairs(remainingPairs);
+
+    const isCodeStillUsed = remainingPairs.some(p => p.sourceCode === targetPair.sourceCode);
+    if (!isCodeStillUsed) {
+      // Delete downloaded language pack from phone storage and unload from RAM
+      setDownloadedPacks(prev => prev.filter(c => c !== targetPair.sourceCode));
+      showToast(`Removed ${targetPair.label} & deleted ~30MB model pack.`);
+      setStatusLog(prev => [
+        `[MODEL PACK DELETED] Removed ${targetPair.label} (${targetPair.sourceCode}) offline model (~30MB) from device flash storage. RAM buffers freed!`,
+        `[PAIR REMOVED] Active slots: ${remainingPairs.length}/3. Storage recovered: 30 MB.`,
+        ...prev.slice(0, 7)
+      ]);
+    } else {
       showToast(`Removed ${targetPair.label} pair (Slot freed)`);
       setStatusLog(prev => [
-        `[PAIR REMOVED] Deleted ${targetPair.label} pair. 30MB storage freed. Active slots: ${activePairs.length - 1}/3.`,
+        `[PAIR REMOVED] Released slot for ${targetPair.label}. Language still retained in another pair.`,
         ...prev.slice(0, 8)
       ]);
     }
@@ -620,13 +638,32 @@ export default function App() {
         sizeMb: 30
       };
 
-      setActivePairs(prev => prev.map(p => p.id === targetPairIdToReplace ? newPair : p));
+      const updatedPairs = activePairs.map(p => p.id === targetPairIdToReplace ? newPair : p);
+      setActivePairs(updatedPairs);
+
+      // Check if old language is still used in any other slot
+      const oldCode = oldPair?.sourceCode;
+      const isOldCodeStillUsed = oldCode && updatedPairs.some(p => p.id !== targetPairIdToReplace && p.sourceCode === oldCode);
+
+      if (oldCode && !isOldCodeStillUsed) {
+        setDownloadedPacks(prev => [...prev.filter(c => c !== oldCode), newSourceCode]);
+        showToast(`Replaced with ${langMeta.label}. Deleted old ${oldPair?.label} pack (~30MB).`);
+        setStatusLog(prev => [
+          `[MODEL PACK DELETED] Purged old ${oldPair?.label} pack (~30MB) from storage & memory.`,
+          `[PACK REPLACED] ${oldPair?.label || 'Previous pair'} replaced by ${langMeta.label} (${langMeta.nativeName}). Downloaded new 30MB model. Active slots: 3/3!`,
+          ...prev.slice(0, 7)
+        ]);
+      } else {
+        setDownloadedPacks(prev => Array.from(new Set([...prev, newSourceCode])));
+        showToast(`Replaced with ${langMeta.label} (~30MB model downloaded).`);
+        setStatusLog(prev => [
+          `[PACK REPLACED] ${oldPair?.label || 'Previous pair'} replaced by ${langMeta.label} (${langMeta.nativeName}). Active slots: 3/3!`,
+          ...prev.slice(0, 8)
+        ]);
+      }
+
       setDownloadingPack(null);
       setShowDetectedLangModal(false);
-      setStatusLog(prev => [
-        `[PACK REPLACED] ${oldPair?.label || 'Previous pair'} replaced by ${langMeta.label} (${langMeta.nativeName}). Active slots remain optimal at 3/3!`,
-        ...prev.slice(0, 8)
-      ]);
     }, 750);
   };
 
@@ -1809,7 +1846,7 @@ export default function App() {
                                 <button
                                   onClick={() => handleRemoveLanguagePair(pair.id)}
                                   className="text-slate-500 hover:text-rose-400 text-xs px-1.5 py-0.5 rounded hover:bg-slate-800 transition cursor-pointer"
-                                  title={`Remove ${pair.label} pair (frees 30MB)`}
+                                  title={`Remove ${pair.label} pair & delete offline model pack (frees 30MB storage & RAM)`}
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
@@ -1818,7 +1855,7 @@ export default function App() {
                             <div className="mt-2 pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[10px]">
                               <span className="text-slate-400">Slot #{slotIdx + 1} Status:</span>
                               <span className="font-mono text-emerald-300 font-semibold flex items-center gap-1">
-                                <Check className="w-2.5 h-2.5 text-emerald-400" /> 30 MB Ready
+                                <Check className="w-2.5 h-2.5 text-emerald-400" /> 30 MB (Auto-deletes on removal)
                               </span>
                             </div>
                           </>
@@ -2097,29 +2134,29 @@ export default function App() {
                     <div>
                       <div className="flex justify-between text-[10px] text-slate-400 mb-1">
                         <span>Device Storage:</span>
-                        <span className="font-mono font-bold text-emerald-300">{activePacks.length * 30} MB / 90 MB</span>
+                        <span className="font-mono font-bold text-emerald-300">{downloadedPacks.length * 30} MB / 90 MB</span>
                       </div>
                       <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
                         <div
                           className="bg-emerald-500 h-full rounded-full transition-all duration-300"
-                          style={{ width: `${(activePacks.length / 3) * 100}%` }}
+                          style={{ width: `${(downloadedPacks.length / 3) * 100}%` }}
                         ></div>
                       </div>
-                      <div className="text-[9px] text-slate-500 mt-1">&lt;0.1% of phone flash storage</div>
+                      <div className="text-[9px] text-slate-500 mt-1">Auto-purges on pair removal</div>
                     </div>
 
                     <div>
                       <div className="flex justify-between text-[10px] text-slate-400 mb-1">
                         <span>RAM Overhead:</span>
-                        <span className="font-mono font-bold text-sky-300">~{activePacks.length * 14 + 8} MB</span>
+                        <span className="font-mono font-bold text-sky-300">~{downloadedPacks.length * 14 + 8} MB</span>
                       </div>
                       <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
                         <div
                           className="bg-sky-500 h-full rounded-full transition-all duration-300"
-                          style={{ width: `${((activePacks.length * 14 + 8) / 50) * 100}%` }}
+                          style={{ width: `${((downloadedPacks.length * 14 + 8) / 50) * 100}%` }}
                         ></div>
                       </div>
-                      <div className="text-[9px] text-slate-500 mt-1">Lightweight ML Kit inference</div>
+                      <div className="text-[9px] text-slate-500 mt-1">Unloads from RAM when removed</div>
                     </div>
 
                     <div>
