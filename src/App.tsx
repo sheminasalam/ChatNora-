@@ -1507,12 +1507,23 @@ export default function App() {
                         <span className="text-[10px] text-slate-300">WA Business</span>
                       </button>
 
-                      <div className="flex flex-col items-center space-y-1 opacity-40">
-                        <div className="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center">
-                          <Sparkles className="w-6 h-6 text-slate-400" />
+                      <button
+                        onClick={() => {
+                          showToast('ChatNora MainActivity resumed: refreshAllUI() executed!');
+                          setStatusLog(prev => [
+                            `[LIFECYCLE onResume] Returned to ChatNora. refreshAllUI() synced active slots (${activePairs.length}/3) and Ignored Languages (${ignoredLanguages.length} items) without restarting the app!`,
+                            ...prev.slice(0, 8)
+                          ]);
+                          switchChat('chatA');
+                        }}
+                        className="flex flex-col items-center space-y-1 hover:scale-105 transition cursor-pointer"
+                        title="Open ChatNora (triggers onResume() lifecycle refresh)"
+                      >
+                        <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-900/50">
+                          <Languages className="w-6 h-6 text-white" />
                         </div>
-                        <span className="text-[10px] text-slate-400">Settings</span>
-                      </div>
+                        <span className="text-[10px] text-slate-300">ChatNora</span>
+                      </button>
                     </div>
                   </div>
                 ) : (
@@ -1562,6 +1573,13 @@ export default function App() {
                           title="Open Tamil Chat (Murugan)"
                         >
                           🇮🇳 Tamil
+                        </button>
+                        <button
+                          onClick={() => switchChat('chatFrench')}
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer transition ${activeChat === 'chatFrench' ? 'bg-purple-600 text-white shadow' : 'bg-slate-800/80 text-purple-300 hover:bg-slate-700'}`}
+                          title="Open Multilingual French + Spanish Chat (Julien)"
+                        >
+                          🇫🇷+🇪🇸 Multi
                         </button>
                         <button
                           onClick={() => switchChat('chatA')}
@@ -2428,13 +2446,21 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4">
                   <button
                     onClick={() => switchChat('chatA')}
                     className={`px-3 py-2 rounded-xl text-xs font-medium border text-center transition cursor-pointer ${activeChat === 'chatA' ? 'bg-emerald-600 border-emerald-500 text-white shadow-md' : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800'}`}
                   >
                     Chat A (Bengali)
                     <span className="block text-[10px] opacity-75 font-normal">Rafiq (Dhaka)</span>
+                  </button>
+
+                  <button
+                    onClick={() => switchChat('chatFrench')}
+                    className={`px-3 py-2 rounded-xl text-xs font-medium border text-center transition cursor-pointer ${activeChat === 'chatFrench' ? 'bg-purple-600 border-purple-500 text-white shadow-md' : 'bg-slate-800/80 border-purple-800/60 text-purple-300 hover:bg-slate-800'}`}
+                  >
+                    Multilingual Chat 🌐
+                    <span className="block text-[10px] opacity-75 font-normal">Julien (FR + ES)</span>
                   </button>
 
                   <button
@@ -2462,11 +2488,11 @@ export default function App() {
                   </button>
                 </div>
 
-                <div className="flex flex-wrap items-center justify-between gap-4 pt-3 border-t border-slate-800">
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800">
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={() => setOverlayEnabled(!overlayEnabled)}
-                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer ${
                         overlayEnabled
                           ? 'bg-emerald-950 border-emerald-800 text-emerald-300'
                           : 'bg-red-950/80 border-red-900 text-red-300'
@@ -2477,14 +2503,31 @@ export default function App() {
                     </button>
                   </div>
 
-                  <button
-                    onClick={simulateSlowAsyncTranslation}
-                    disabled={simulatedPendingTask}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-950/80 border border-amber-800 text-amber-300 hover:bg-amber-900 transition disabled:opacity-50"
-                  >
-                    <RotateCcw className={`w-3.5 h-3.5 ${simulatedPendingTask ? 'animate-spin' : ''}`} />
-                    Test Async Race (1.8s delay)
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        showToast('onResume() triggered: All UI components & Ignore List refreshed instantly!');
+                        setStatusLog(prev => [
+                          `[LIFECYCLE onResume] MainActivity resumed from background. refreshAllUI() executed! Ignored languages (${ignoredLanguages.length} active), language slots (${activePairs.length}/3), switches, and models refreshed immediately without restarting the app.`,
+                          ...prev.slice(0, 8)
+                        ]);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-950/80 border border-emerald-700 text-emerald-300 hover:bg-emerald-900 transition cursor-pointer"
+                      title="Simulate user minimizing WhatsApp and returning to ChatNora / MainActivity"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Simulate onResume()</span>
+                    </button>
+
+                    <button
+                      onClick={simulateSlowAsyncTranslation}
+                      disabled={simulatedPendingTask}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-950/80 border border-amber-800 text-amber-300 hover:bg-amber-900 transition disabled:opacity-50 cursor-pointer"
+                    >
+                      <RotateCcw className={`w-3.5 h-3.5 ${simulatedPendingTask ? 'animate-spin' : ''}`} />
+                      Test Async Race (1.8s delay)
+                    </button>
+                  </div>
                 </div>
               </div>
 
