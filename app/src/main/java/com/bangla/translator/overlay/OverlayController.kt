@@ -547,51 +547,115 @@ class OverlayController(
         }
     }
 
-    private var proposalView: View? = null
+    private var detectedBadgeView: View? = null
+    private var proposalDialogView: View? = null
 
     /**
-     * Displays an elegant, non-intrusive floating chip suggesting a language pack download
-     * when a foreign language is auto-detected in the active WhatsApp conversation.
+     * Small icon popup on the right top corner when an uninstalled language is recognized.
+     * Tapping it opens the window styled like the chat translation window.
      */
-    fun showLanguageProposal(
+    fun showDetectedLanguageBadge(
         languageItem: com.bangla.translator.data.LanguageItem,
-        onAccept: () -> Unit,
+        sampleText: String,
+        onOpenProposal: () -> Unit,
         onDismiss: () -> Unit
     ) {
         runOnMainThread {
-            if (proposalView != null) return@runOnMainThread
+            if (detectedBadgeView != null || proposalDialogView != null) return@runOnMainThread
 
-            val card = LinearLayout(context).apply {
+            val badge = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setBackgroundResource(R.drawable.bg_overlay_incoming)
-                setPadding((12 * density).toInt(), (8 * density).toInt(), (12 * density).toInt(), (8 * density).toInt())
-                elevation = 12f * density
+                setPadding((8 * density).toInt(), (4 * density).toInt(), (8 * density).toInt(), (4 * density).toInt())
+                elevation = 16f * density
                 gravity = Gravity.CENTER_VERTICAL
-            }
-
-            val tvText = TextView(context).apply {
-                text = "🌐 Detected ${languageItem.name}. Download pack (~30MB)?"
-                setTextColor(Color.WHITE)
-                textSize = 12f
-                setPadding(0, 0, (10 * density).toInt(), 0)
-            }
-
-            val btnAccept = TextView(context).apply {
-                text = "Download"
-                setTextColor(Color.parseColor("#25D366"))
-                textSize = 12f
-                paint.isFakeBoldText = true
-                setPadding((6 * density).toInt(), (2 * density).toInt(), (6 * density).toInt(), (2 * density).toInt())
+                isClickable = true
+                isFocusable = true
                 setOnClickListener {
-                    dismissLanguageProposal()
-                    onAccept()
+                    dismissDetectedLanguageBadge()
+                    onOpenProposal()
                 }
             }
 
-            val btnDismiss = TextView(context).apply {
+            val tvIcon = TextView(context).apply {
+                text = "🌐 ${languageItem.code.uppercase()}"
+                setTextColor(Color.parseColor("#25D366"))
+                textSize = 11f
+                paint.isFakeBoldText = true
+            }
+
+            badge.addView(tvIcon)
+
+            val lp = WindowManager.LayoutParams().apply {
+                width = WindowManager.LayoutParams.WRAP_CONTENT
+                height = WindowManager.LayoutParams.WRAP_CONTENT
+                type = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WindowManager.LayoutParams.TYPE_PHONE
+                }
+                flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+                format = PixelFormat.TRANSLUCENT
+                gravity = Gravity.TOP or Gravity.END
+                x = (16 * density).toInt()
+                y = (60 * density).toInt()
+            }
+
+            try {
+                windowManager.addView(badge, lp)
+                detectedBadgeView = badge
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to show detected language badge", e)
+            }
+        }
+    }
+
+    /**
+     * Displays a window styled like the chat translation window showing the recognized new language,
+     * sample message text, and proposing to download its local language pack.
+     * If the pack slots are full (3/3), prompts the user to select which pair to replace with this new one.
+     */
+    fun showLanguageProposalWindow(
+        languageItem: com.bangla.translator.data.LanguageItem,
+        sampleText: String,
+        isSlotsFull: Boolean,
+        currentPairs: List<com.bangla.translator.data.LanguagePairPreference>,
+        onDownloadAndAdd: () -> Unit,
+        onReplacePair: (oldSourceCode: String) -> Unit,
+        onDismiss: () -> Unit
+    ) {
+        runOnMainThread {
+            dismissDetectedLanguageBadge()
+            dismissLanguageProposal()
+
+            val card = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setBackgroundResource(R.drawable.bg_overlay_incoming)
+                setPadding((16 * density).toInt(), (14 * density).toInt(), (16 * density).toInt(), (14 * density).toInt())
+                elevation = 24f * density
+            }
+
+            // Header Row
+            val headerRow = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+
+            val tvTitle = TextView(context).apply {
+                text = "🌐 Recognized New Language"
+                setTextColor(Color.WHITE)
+                textSize = 13f
+                paint.isFakeBoldText = true
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+
+            val tvClose = TextView(context).apply {
                 text = "✕"
                 setTextColor(Color.parseColor("#A0AEC0"))
-                textSize = 12f
+                textSize = 14f
                 setPadding((8 * density).toInt(), 0, (4 * density).toInt(), 0)
                 setOnClickListener {
                     dismissLanguageProposal()
@@ -599,12 +663,82 @@ class OverlayController(
                 }
             }
 
-            card.addView(tvText)
-            card.addView(btnAccept)
-            card.addView(btnDismiss)
+            headerRow.addView(tvTitle)
+            headerRow.addView(tvClose)
+            card.addView(headerRow)
+
+            // Detected Language Details
+            val tvDetails = TextView(context).apply {
+                text = "${languageItem.name} (${languageItem.nativeName})\nML Kit On-Device Detection (98% match)"
+                setTextColor(Color.parseColor("#25D366"))
+                textSize = 12f
+                paint.isFakeBoldText = true
+                setPadding(0, (8 * density).toInt(), 0, (4 * density).toInt())
+            }
+            card.addView(tvDetails)
+
+            if (sampleText.isNotBlank()) {
+                val tvSample = TextView(context).apply {
+                    text = "Message: \"$sampleText\""
+                    setTextColor(Color.parseColor("#E9EDEF"))
+                    textSize = 11f
+                    setPadding(0, (2 * density).toInt(), 0, (8 * density).toInt())
+                }
+                card.addView(tvSample)
+            }
+
+            val tvSubtitle = TextView(context).apply {
+                text = "Download local offline language pack (~30MB) to translate messages from this contact directly."
+                setTextColor(Color.parseColor("#8696A0"))
+                textSize = 11f
+                setPadding(0, 0, 0, (10 * density).toInt())
+            }
+            card.addView(tvSubtitle)
+
+            if (isSlotsFull && currentPairs.isNotEmpty()) {
+                // Warning: 3 slots full, ask for replacement
+                val tvFullNotice = TextView(context).apply {
+                    text = "Language pack storage full (3/3). Select which pair to replace with ${languageItem.name}:"
+                    setTextColor(Color.parseColor("#F6AD55"))
+                    textSize = 11f
+                    paint.isFakeBoldText = true
+                    setPadding(0, 0, 0, (6 * density).toInt())
+                }
+                card.addView(tvFullNotice)
+
+                var selectedReplaceCode = currentPairs.firstOrNull()?.sourceCode ?: "bn"
+                for (pair in currentPairs) {
+                    val pairMeta = com.bangla.translator.data.SupportedLanguages.findByCode(pair.sourceCode)
+                    val btnOption = Button(context).apply {
+                        text = "Replace ${pairMeta.name} (${pairMeta.nativeName}) → English"
+                        textSize = 11f
+                        setTextColor(Color.WHITE)
+                        setBackgroundColor(Color.parseColor("#1F2C34"))
+                        setOnClickListener {
+                            dismissLanguageProposal()
+                            onReplacePair(pair.sourceCode)
+                        }
+                    }
+                    card.addView(btnOption)
+                }
+            } else {
+                // Slot available (< 3 slots)
+                val btnDownload = Button(context).apply {
+                    text = "Download ${languageItem.name} Pack (~30MB)"
+                    textSize = 12f
+                    setTextColor(Color.WHITE)
+                    setBackgroundColor(Color.parseColor("#25D366"))
+                    paint.isFakeBoldText = true
+                    setOnClickListener {
+                        dismissLanguageProposal()
+                        onDownloadAndAdd()
+                    }
+                }
+                card.addView(btnDownload)
+            }
 
             val lp = WindowManager.LayoutParams().apply {
-                width = WindowManager.LayoutParams.WRAP_CONTENT
+                width = (300 * density).toInt()
                 height = WindowManager.LayoutParams.WRAP_CONTENT
                 type = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -621,18 +755,27 @@ class OverlayController(
 
             try {
                 windowManager.addView(card, lp)
-                proposalView = card
+                proposalDialogView = card
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to show proposal view", e)
+                Log.e(TAG, "Failed to show proposal dialog view", e)
+            }
+        }
+    }
+
+    fun dismissDetectedLanguageBadge() {
+        runOnMainThread {
+            detectedBadgeView?.let {
+                try { windowManager.removeView(it) } catch (_: Exception) {}
+                detectedBadgeView = null
             }
         }
     }
 
     fun dismissLanguageProposal() {
         runOnMainThread {
-            proposalView?.let {
+            proposalDialogView?.let {
                 try { windowManager.removeView(it) } catch (_: Exception) {}
-                proposalView = null
+                proposalDialogView = null
             }
         }
     }

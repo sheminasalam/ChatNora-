@@ -68,49 +68,183 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupLanguageSpinners() {
-        val sourceAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, SupportedLanguages.ALL)
+        val allLanguages = SupportedLanguages.ALL
+        val targetLanguages = SupportedLanguages.TARGET_LANGUAGES
+
+        val sourceAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, allLanguages)
         binding.spinnerSourceLanguage.adapter = sourceAdapter
 
-        val targetAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, SupportedLanguages.TARGET_LANGUAGES)
+        val slot2Adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, allLanguages)
+        binding.spinnerSlot2Language.adapter = slot2Adapter
+
+        val slot3Adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, allLanguages)
+        binding.spinnerSlot3Language.adapter = slot3Adapter
+
+        val targetAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, targetLanguages)
         binding.spinnerTargetLanguage.adapter = targetAdapter
 
-        val initialSourceIndex = SupportedLanguages.ALL.indexOfFirst { it.code == appPreferences.sourceLanguageCode }.coerceAtLeast(0)
-        binding.spinnerSourceLanguage.setSelection(initialSourceIndex)
-
-        val initialTargetIndex = SupportedLanguages.TARGET_LANGUAGES.indexOfFirst { it.code == appPreferences.targetLanguageCode }.coerceAtLeast(0)
+        val initialTargetIndex = targetLanguages.indexOfFirst { it.code == appPreferences.targetLanguageCode }.coerceAtLeast(0)
         binding.spinnerTargetLanguage.setSelection(initialTargetIndex)
 
+        refreshLanguageSlotsUI()
+
+        // Slot 1 change listener
         binding.spinnerSourceLanguage.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                val selected = SupportedLanguages.ALL[position]
-                if (selected.code != appPreferences.sourceLanguageCode) {
-                    appPreferences.sourceLanguageCode = selected.code
-                    TranslationEngine.setLanguagePair(selected.code, appPreferences.targetLanguageCode)
+                val selected = allLanguages[position]
+                val pairs = appPreferences.getLanguagePairs().toMutableList()
+                if (pairs.isNotEmpty() && pairs[0].sourceCode != selected.code) {
+                    pairs[0] = com.bangla.translator.data.LanguagePairPreference(selected.code, appPreferences.targetLanguageCode)
+                    appPreferences.saveLanguagePairs(pairs)
                     updateLanguagePairSummary()
                 }
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
-        binding.spinnerTargetLanguage.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+        // Slot 2 change listener
+        binding.spinnerSlot2Language.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                val selected = SupportedLanguages.TARGET_LANGUAGES[position]
-                if (selected.code != appPreferences.targetLanguageCode) {
-                    appPreferences.targetLanguageCode = selected.code
-                    TranslationEngine.setLanguagePair(appPreferences.sourceLanguageCode, selected.code)
+                val selected = allLanguages[position]
+                val pairs = appPreferences.getLanguagePairs().toMutableList()
+                if (pairs.size > 1 && pairs[1].sourceCode != selected.code) {
+                    pairs[1] = com.bangla.translator.data.LanguagePairPreference(selected.code, appPreferences.targetLanguageCode)
+                    appPreferences.saveLanguagePairs(pairs)
                     updateLanguagePairSummary()
                 }
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // Slot 3 change listener
+        binding.spinnerSlot3Language.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val selected = allLanguages[position]
+                val pairs = appPreferences.getLanguagePairs().toMutableList()
+                if (pairs.size > 2 && pairs[2].sourceCode != selected.code) {
+                    pairs[2] = com.bangla.translator.data.LanguagePairPreference(selected.code, appPreferences.targetLanguageCode)
+                    appPreferences.saveLanguagePairs(pairs)
+                    updateLanguagePairSummary()
+                }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // Target language change listener
+        binding.spinnerTargetLanguage.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val selected = targetLanguages[position]
+                if (selected.code != appPreferences.targetLanguageCode) {
+                    appPreferences.targetLanguageCode = selected.code
+                    val pairs = appPreferences.getLanguagePairs().map {
+                        com.bangla.translator.data.LanguagePairPreference(it.sourceCode, selected.code)
+                    }
+                    appPreferences.saveLanguagePairs(pairs)
+                    updateLanguagePairSummary()
+                }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // Add Language Pair Button
+        binding.btnAddLanguagePair.setOnClickListener {
+            showAddLanguagePairDialog()
+        }
+
+        // Remove buttons
+        binding.btnRemoveSlot2.setOnClickListener {
+            val pairs = appPreferences.getLanguagePairs()
+            if (pairs.size > 1) {
+                appPreferences.removeLanguagePair(pairs[1].sourceCode)
+                refreshLanguageSlotsUI()
+            }
+        }
+
+        binding.btnRemoveSlot3.setOnClickListener {
+            val pairs = appPreferences.getLanguagePairs()
+            if (pairs.size > 2) {
+                appPreferences.removeLanguagePair(pairs[2].sourceCode)
+                refreshLanguageSlotsUI()
+            }
         }
 
         updateLanguagePairSummary()
     }
 
+    private fun refreshLanguageSlotsUI() {
+        val pairs = appPreferences.getLanguagePairs()
+        val allLanguages = SupportedLanguages.ALL
+
+        // Slot 1
+        if (pairs.isNotEmpty()) {
+            val idx = allLanguages.indexOfFirst { it.code == pairs[0].sourceCode }.coerceAtLeast(0)
+            binding.spinnerSourceLanguage.setSelection(idx)
+        }
+
+        // Slot 2
+        if (pairs.size > 1) {
+            binding.layoutSlot2.visibility = View.VISIBLE
+            val idx = allLanguages.indexOfFirst { it.code == pairs[1].sourceCode }.coerceAtLeast(0)
+            binding.spinnerSlot2Language.setSelection(idx)
+        } else {
+            binding.layoutSlot2.visibility = View.GONE
+        }
+
+        // Slot 3
+        if (pairs.size > 2) {
+            binding.layoutSlot3.visibility = View.VISIBLE
+            val idx = allLanguages.indexOfFirst { it.code == pairs[2].sourceCode }.coerceAtLeast(0)
+            binding.spinnerSlot3Language.setSelection(idx)
+        } else {
+            binding.layoutSlot3.visibility = View.GONE
+        }
+
+        binding.btnAddLanguagePair.visibility = if (pairs.size < 3) View.VISIBLE else View.GONE
+        binding.tvActivePairsBadge.text = "${pairs.size}/3 Active"
+        updateLanguagePairSummary()
+    }
+
+    private fun showAddLanguagePairDialog() {
+        val currentPairs = appPreferences.getLanguagePairs()
+        val available = SupportedLanguages.ALL.filter { lang ->
+            currentPairs.none { it.sourceCode == lang.code }
+        }
+
+        if (available.isEmpty()) {
+            Toast.makeText(this, "All available languages are already configured.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val items = available.map { "${it.name} (${it.nativeName})" }.toTypedArray()
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Add Language Pair (Slot #${currentPairs.size + 1})")
+            .setItems(items) { _, which ->
+                val chosen = available[which]
+                appPreferences.addLanguagePair(chosen.code, appPreferences.targetLanguageCode)
+                TranslationEngine.prepareModelIfNeeded(
+                    sourceLangCode = chosen.mlKitCode,
+                    onSuccess = {
+                        runOnUiThread {
+                            refreshLanguageSlotsUI()
+                            Toast.makeText(this@MainActivity, "${chosen.name} pair added & model ready!", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+                refreshLanguageSlotsUI()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun updateLanguagePairSummary() {
-        binding.tvActivePairSummary.text = "Active Pair: ${appPreferences.languagePairLabel}"
-        val src = SupportedLanguages.findByCode(appPreferences.sourceLanguageCode)
-        binding.tvModelDescription.text = "Downloads ~30MB Google ML Kit on-device model for ${src.name} offline translations."
+        val pairs = appPreferences.getLanguagePairs()
+        val summary = pairs.joinToString(", ") {
+            val src = SupportedLanguages.findByCode(it.sourceCode)
+            val trg = SupportedLanguages.findByCode(it.targetCode)
+            "${src.nativeName} → ${trg.name}"
+        }
+        binding.tvActivePairSummary.text = "Active Pairs (${pairs.size}/3): $summary"
+        binding.tvModelDescription.text = "Downloads ~30MB Google ML Kit model per language for 100% offline WhatsApp translations."
     }
 
     private fun setupListeners() {

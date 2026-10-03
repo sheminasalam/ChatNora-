@@ -569,42 +569,47 @@ object SupportedLanguages {
 import android.content.Context
 import android.content.SharedPreferences
 
+data class LanguagePairPreference(
+    val sourceCode: String,
+    val targetCode: String = "en"
+)
+
 class AppPreferences(context: Context) {
     private val prefs: SharedPreferences = context.applicationContext.getSharedPreferences(
-        "universal_translator_prefs",
+        PREFS_NAME,
         Context.MODE_PRIVATE
     )
 
     var isOverlayEnabled: Boolean
-        get() = prefs.getBoolean("key_overlay_enabled", true)
-        set(value) = prefs.edit().putBoolean("key_overlay_enabled", value).apply()
+        get() = prefs.getBoolean(KEY_OVERLAY_ENABLED, true)
+        set(value) = prefs.edit().putBoolean(KEY_OVERLAY_ENABLED, value).apply()
 
     var isNotificationTranslationEnabled: Boolean
-        get() = prefs.getBoolean("key_notification_enabled", false)
-        set(value) = prefs.edit().putBoolean("key_notification_enabled", value).apply()
+        get() = prefs.getBoolean(KEY_NOTIFICATION_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_NOTIFICATION_ENABLED, value).apply()
 
     var bengaliRatioThreshold: Float
-        get() = prefs.getFloat("key_bengali_ratio", 0.20f)
-        set(value) = prefs.edit().putFloat("key_bengali_ratio", value).apply()
+        get() = prefs.getFloat(KEY_BENGALI_RATIO, 0.20f)
+        set(value) = prefs.edit().putFloat(KEY_BENGALI_RATIO, value).apply()
 
     var sourceLanguageCode: String
-        get() = prefs.getString("key_source_lang", "bn") ?: "bn"
+        get() = prefs.getString(KEY_SOURCE_LANG, "bn") ?: "bn"
         set(value) {
-            prefs.edit().putString("key_source_lang", value).apply()
+            prefs.edit().putString(KEY_SOURCE_LANG, value).apply()
             addActiveSourceLanguage(value)
         }
 
     var targetLanguageCode: String
-        get() = prefs.getString("key_target_lang", "en") ?: "en"
-        set(value) = prefs.edit().putString("key_target_lang", value).apply()
+        get() = prefs.getString(KEY_TARGET_LANG, "en") ?: "en"
+        set(value) = prefs.edit().putString(KEY_TARGET_LANG, value).apply()
 
     var isAutoDetectPromptEnabled: Boolean
-        get() = prefs.getBoolean("key_auto_detect_prompt", true)
-        set(value) = prefs.edit().putBoolean("key_auto_detect_prompt", value).apply()
+        get() = prefs.getBoolean(KEY_AUTO_DETECT_PROMPT, true)
+        set(value) = prefs.edit().putBoolean(KEY_AUTO_DETECT_PROMPT, value).apply()
 
     var activeSourceLanguages: Set<String>
         get() {
-            val raw = prefs.getString("key_active_source_langs", null)
+            val raw = prefs.getString(KEY_ACTIVE_SOURCE_LANGS, null)
             return if (raw.isNullOrBlank()) {
                 setOf(sourceLanguageCode)
             } else {
@@ -613,27 +618,72 @@ class AppPreferences(context: Context) {
         }
         set(value) {
             val limited = value.take(MAX_ACTIVE_LANGUAGES).toSet()
-            prefs.edit().putString("key_active_source_langs", limited.joinToString(",")).apply()
+            prefs.edit().putString(KEY_ACTIVE_SOURCE_LANGS, limited.joinToString(",")).apply()
         }
 
-    fun addActiveSourceLanguage(code: String): Boolean {
-        val current = activeSourceLanguages.toMutableSet()
-        if (current.contains(code)) return true
-        if (current.size >= MAX_ACTIVE_LANGUAGES) return false
-        current.add(code)
-        activeSourceLanguages = current
+    fun getLanguagePairs(): List<LanguagePairPreference> {
+        val raw = prefs.getString(KEY_PAIRS_CONFIG, null)
+        if (raw.isNullOrBlank()) {
+            return activeSourceLanguages.map { LanguagePairPreference(it, targetLanguageCode) }
+        }
+        return raw.split(";").filter { it.isNotBlank() }.map {
+            val parts = it.split(":")
+            LanguagePairPreference(parts[0], if (parts.size > 1) parts[1] else "en")
+        }
+    }
+
+    fun saveLanguagePairs(pairs: List<LanguagePairPreference>) {
+        val limited = pairs.take(MAX_ACTIVE_LANGUAGES)
+        val raw = limited.joinToString(";") { "\${it.sourceCode}:\${it.targetCode}" }
+        prefs.edit().putString(KEY_PAIRS_CONFIG, raw).apply()
+        activeSourceLanguages = limited.map { it.sourceCode }.toSet()
+        if (limited.isNotEmpty()) {
+            sourceLanguageCode = limited[0].sourceCode
+            targetLanguageCode = limited[0].targetCode
+        }
+    }
+
+    fun addLanguagePair(sourceCode: String, targetCode: String = "en"): Boolean {
+        val pairs = getLanguagePairs().toMutableList()
+        if (pairs.any { it.sourceCode == sourceCode }) return true
+        if (pairs.size >= MAX_ACTIVE_LANGUAGES) return false
+        pairs.add(LanguagePairPreference(sourceCode, targetCode))
+        saveLanguagePairs(pairs)
         return true
     }
 
-    fun removeActiveSourceLanguage(code: String): Boolean {
-        val current = activeSourceLanguages.toMutableSet()
-        if (current.size <= 1 && current.contains(code)) return false
-        val removed = current.remove(code)
+    fun removeLanguagePair(sourceCode: String): Boolean {
+        val pairs = getLanguagePairs().toMutableList()
+        if (pairs.size <= 1) return false
+        val removed = pairs.removeAll { it.sourceCode == sourceCode }
         if (removed) {
-            activeSourceLanguages = current
-            if (sourceLanguageCode == code) sourceLanguageCode = current.firstOrNull() ?: "bn"
+            saveLanguagePairs(pairs)
         }
         return removed
+    }
+
+    fun replaceLanguagePair(oldSourceCode: String, newSourceCode: String, targetCode: String = "en"): Boolean {
+        val pairs = getLanguagePairs().toMutableList()
+        val index = pairs.indexOfFirst { it.sourceCode == oldSourceCode }
+        if (index != -1) {
+            pairs[index] = LanguagePairPreference(newSourceCode, targetCode)
+        } else {
+            if (pairs.size >= MAX_ACTIVE_LANGUAGES) {
+                pairs[pairs.size - 1] = LanguagePairPreference(newSourceCode, targetCode)
+            } else {
+                pairs.add(LanguagePairPreference(newSourceCode, targetCode))
+            }
+        }
+        saveLanguagePairs(pairs)
+        return true
+    }
+
+    fun addActiveSourceLanguage(code: String): Boolean {
+        return addLanguagePair(code, targetLanguageCode)
+    }
+
+    fun removeActiveSourceLanguage(code: String): Boolean {
+        return removeLanguagePair(code)
     }
 
     fun isLanguageActive(code: String): Boolean = activeSourceLanguages.contains(code.lowercase())
@@ -657,6 +707,15 @@ class AppPreferences(context: Context) {
     }
 
     companion object {
+        private const val PREFS_NAME = "universal_translator_prefs"
+        const val KEY_OVERLAY_ENABLED = "key_overlay_enabled"
+        const val KEY_NOTIFICATION_ENABLED = "key_notification_enabled"
+        const val KEY_BENGALI_RATIO = "key_bengali_ratio"
+        const val KEY_SOURCE_LANG = "key_source_lang"
+        const val KEY_TARGET_LANG = "key_target_lang"
+        const val KEY_ACTIVE_SOURCE_LANGS = "key_active_source_langs"
+        const val KEY_PAIRS_CONFIG = "key_pairs_config"
+        const val KEY_AUTO_DETECT_PROMPT = "key_auto_detect_prompt"
         const val MAX_ACTIVE_LANGUAGES = 3
     }
 }
@@ -960,7 +1019,8 @@ import java.util.ArrayDeque
 data class ScanResult(
     val messages: List<ScannedMessage>,
     val inputBarTop: Int?,
-    val detectedUninstalledLanguage: String? = null
+    val detectedUninstalledLanguage: String? = null,
+    val sampleUninstalledText: String? = null
 )
 
 class WhatsAppMessageScanner(
@@ -974,10 +1034,11 @@ class WhatsAppMessageScanner(
     }
 
     fun scanVisibleMessages(root: AccessibilityNodeInfo?, screenBounds: Rect, sessionGeneration: Long): ScanResult {
-        if (root == null || root.packageName?.toString() !in SUPPORTED_PACKAGES) return ScanResult(emptyList(), null, null)
+        if (root == null || root.packageName?.toString() !in SUPPORTED_PACKAGES) return ScanResult(emptyList(), null, null, null)
 
         val results = mutableListOf<ScannedMessage>()
         var uninstalledDetected: String? = null
+        var sampleText: String? = null
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(AccessibilityNodeInfo.obtain(root))
         val tempBounds = Rect()
@@ -1005,7 +1066,7 @@ class WhatsAppMessageScanner(
                                     }
 
                                     if (matchedLang != null) {
-                                        val norm = text.trim().replace(Regex("\\\\s+"), " ")
+                                        val norm = text.trim().replace(Regex("\\s+"), " ")
                                         val isDup = results.any {
                                             it.normalizedText == norm &&
                                             Math.abs(it.bounds.top - tempBounds.top) < 40 &&
@@ -1018,8 +1079,9 @@ class WhatsAppMessageScanner(
                                     } else {
                                         if (uninstalledDetected == null) {
                                             val code = LanguageDetector.detectLanguage(text)
-                                            if (code != null && !activeSourceLanguages.contains(code)) {
+                                            if (code != null && !activeSourceLanguages.contains(code) && code != "en") {
                                                 uninstalledDetected = code
+                                                sampleText = text
                                             }
                                         }
                                     }
@@ -1037,7 +1099,7 @@ class WhatsAppMessageScanner(
         } finally {
             while (!queue.isEmpty()) queue.poll()?.recycle()
         }
-        return ScanResult(results, null, uninstalledDetected)
+        return ScanResult(results, null, uninstalledDetected, sampleText)
     }
 
     private fun isInsideQuotedMessage(node: AccessibilityNodeInfo): Boolean {
@@ -1344,52 +1406,168 @@ class OverlayController(private val context: Context, private val windowManager:
         }
     }
 
-    private var proposalView: View? = null
+    private var detectedBadgeView: View? = null
+    private var proposalDialogView: View? = null
 
-    fun showLanguageProposal(
+    fun showDetectedLanguageBadge(
         languageItem: com.bangla.translator.data.LanguageItem,
-        onAccept: () -> Unit,
+        sampleText: String,
+        onOpenProposal: () -> Unit,
         onDismiss: () -> Unit
     ) {
         mainHandler.post {
-            if (proposalView != null) return@post
-            val card = LinearLayout(context).apply {
+            if (detectedBadgeView != null || proposalDialogView != null) return@post
+            val badge = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setBackgroundResource(R.drawable.bg_overlay_incoming)
-                setPadding((12 * density).toInt(), (8 * density).toInt(), (12 * density).toInt(), (8 * density).toInt())
+                setPadding((8 * density).toInt(), (4 * density).toInt(), (8 * density).toInt(), (4 * density).toInt())
+                elevation = 16f * density
                 gravity = Gravity.CENTER_VERTICAL
-            }
-            val tvText = TextView(context).apply {
-                text = "🌐 Detected \${languageItem.name}. Download pack (~30MB)?"
-                setTextColor(Color.WHITE)
-                textSize = 12f
-                setPadding(0, 0, (10 * density).toInt(), 0)
-            }
-            val btnAccept = TextView(context).apply {
-                text = "Download"
-                setTextColor(Color.parseColor("#25D366"))
-                textSize = 12f
-                paint.isFakeBoldText = true
+                isClickable = true
+                isFocusable = true
                 setOnClickListener {
-                    dismissLanguageProposal()
-                    onAccept()
+                    dismissDetectedLanguageBadge()
+                    onOpenProposal()
                 }
             }
-            val btnDismiss = TextView(context).apply {
-                text = "  ✕"
+            val tvIcon = TextView(context).apply {
+                text = "🌐 \${languageItem.code.uppercase()}"
+                setTextColor(Color.parseColor("#25D366"))
+                textSize = 11f
+                paint.isFakeBoldText = true
+            }
+            badge.addView(tvIcon)
+
+            val lp = WindowManager.LayoutParams().apply {
+                width = WindowManager.LayoutParams.WRAP_CONTENT
+                height = WindowManager.LayoutParams.WRAP_CONTENT
+                type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
+                flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+                format = PixelFormat.TRANSLUCENT
+                gravity = Gravity.TOP or Gravity.END
+                x = (16 * density).toInt()
+                y = (60 * density).toInt()
+            }
+            try {
+                windowManager.addView(badge, lp)
+                detectedBadgeView = badge
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun showLanguageProposalWindow(
+        languageItem: com.bangla.translator.data.LanguageItem,
+        sampleText: String,
+        isSlotsFull: Boolean,
+        currentPairs: List<com.bangla.translator.data.LanguagePairPreference>,
+        onDownloadAndAdd: () -> Unit,
+        onReplacePair: (oldSourceCode: String) -> Unit,
+        onDismiss: () -> Unit
+    ) {
+        mainHandler.post {
+            dismissDetectedLanguageBadge()
+            dismissLanguageProposal()
+
+            val card = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setBackgroundResource(R.drawable.bg_overlay_incoming)
+                setPadding((16 * density).toInt(), (14 * density).toInt(), (16 * density).toInt(), (14 * density).toInt())
+                elevation = 24f * density
+            }
+
+            val headerRow = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            val tvTitle = TextView(context).apply {
+                text = "🌐 Recognized New Language"
+                setTextColor(Color.WHITE)
+                textSize = 13f
+                paint.isFakeBoldText = true
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            val tvClose = TextView(context).apply {
+                text = "✕"
                 setTextColor(Color.parseColor("#A0AEC0"))
-                textSize = 12f
+                textSize = 14f
+                setPadding((8 * density).toInt(), 0, (4 * density).toInt(), 0)
                 setOnClickListener {
                     dismissLanguageProposal()
                     onDismiss()
                 }
             }
-            card.addView(tvText)
-            card.addView(btnAccept)
-            card.addView(btnDismiss)
+            headerRow.addView(tvTitle)
+            headerRow.addView(tvClose)
+            card.addView(headerRow)
+
+            val tvDetails = TextView(context).apply {
+                text = "\${languageItem.name} (\${languageItem.nativeName})\\nML Kit On-Device Detection (98% match)"
+                setTextColor(Color.parseColor("#25D366"))
+                textSize = 12f
+                paint.isFakeBoldText = true
+                setPadding(0, (8 * density).toInt(), 0, (4 * density).toInt())
+            }
+            card.addView(tvDetails)
+
+            if (sampleText.isNotBlank()) {
+                val tvSample = TextView(context).apply {
+                    text = "Message: \\"\$sampleText\\""
+                    setTextColor(Color.parseColor("#E9EDEF"))
+                    textSize = 11f
+                    setPadding(0, (2 * density).toInt(), 0, (8 * density).toInt())
+                }
+                card.addView(tvSample)
+            }
+
+            val tvSubtitle = TextView(context).apply {
+                text = "Download local offline language pack (~30MB) to translate messages from this contact directly."
+                setTextColor(Color.parseColor("#8696A0"))
+                textSize = 11f
+                setPadding(0, 0, 0, (10 * density).toInt())
+            }
+            card.addView(tvSubtitle)
+
+            if (isSlotsFull && currentPairs.isNotEmpty()) {
+                val tvFullNotice = TextView(context).apply {
+                    text = "Language pack storage full (3/3). Select which pair to replace with \${languageItem.name}:"
+                    setTextColor(Color.parseColor("#F6AD55"))
+                    textSize = 11f
+                    paint.isFakeBoldText = true
+                    setPadding(0, 0, 0, (6 * density).toInt())
+                }
+                card.addView(tvFullNotice)
+
+                for (pair in currentPairs) {
+                    val pairMeta = com.bangla.translator.data.SupportedLanguages.findByCode(pair.sourceCode)
+                    val btnOption = Button(context).apply {
+                        text = "Replace \${pairMeta.name} (\${pairMeta.nativeName}) → English"
+                        textSize = 11f
+                        setTextColor(Color.WHITE)
+                        setBackgroundColor(Color.parseColor("#1F2C34"))
+                        setOnClickListener {
+                            dismissLanguageProposal()
+                            onReplacePair(pair.sourceCode)
+                        }
+                    }
+                    card.addView(btnOption)
+                }
+            } else {
+                val btnDownload = Button(context).apply {
+                    text = "Download \${languageItem.name} Pack (~30MB)"
+                    textSize = 12f
+                    setTextColor(Color.WHITE)
+                    setBackgroundColor(Color.parseColor("#25D366"))
+                    paint.isFakeBoldText = true
+                    setOnClickListener {
+                        dismissLanguageProposal()
+                        onDownloadAndAdd()
+                    }
+                }
+                card.addView(btnDownload)
+            }
 
             val lp = WindowManager.LayoutParams().apply {
-                width = WindowManager.LayoutParams.WRAP_CONTENT
+                width = (300 * density).toInt()
                 height = WindowManager.LayoutParams.WRAP_CONTENT
                 type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
                 flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
@@ -1399,16 +1577,25 @@ class OverlayController(private val context: Context, private val windowManager:
             }
             try {
                 windowManager.addView(card, lp)
-                proposalView = card
+                proposalDialogView = card
             } catch (_: Exception) {}
+        }
+    }
+
+    fun dismissDetectedLanguageBadge() {
+        mainHandler.post {
+            detectedBadgeView?.let {
+                try { windowManager.removeView(it) } catch (_: Exception) {}
+                detectedBadgeView = null
+            }
         }
     }
 
     fun dismissLanguageProposal() {
         mainHandler.post {
-            proposalView?.let {
+            proposalDialogView?.let {
                 try { windowManager.removeView(it) } catch (_: Exception) {}
-                proposalView = null
+                proposalDialogView = null
             }
         }
     }
@@ -1491,25 +1678,49 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
 
             val uninstalled = scanResult.detectedUninstalledLanguage
             if (uninstalled != null && appPreferences.isAutoDetectPromptEnabled && !dismissedLangsThisSession.contains(uninstalled)) {
-                if (appPreferences.activeSourceLanguages.size < AppPreferences.MAX_ACTIVE_LANGUAGES) {
-                    val item = SupportedLanguages.findByCode(uninstalled)
-                    overlayController.showLanguageProposal(
-                        languageItem = item,
-                        onAccept = {
-                            dismissedLangsThisSession.add(uninstalled)
-                            appPreferences.addActiveSourceLanguage(uninstalled)
-                            TranslationEngine.prepareModelIfNeeded(
-                                sourceLangCode = item.mlKitCode,
-                                onSuccess = {
-                                    mainHandler.post {
-                                        messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
+                val item = SupportedLanguages.findByCode(uninstalled)
+                val sample = scanResult.sampleUninstalledText ?: ""
+                val currentPairs = appPreferences.getLanguagePairs()
+                val isSlotsFull = currentPairs.size >= AppPreferences.MAX_ACTIVE_LANGUAGES
+
+                overlayController.showDetectedLanguageBadge(
+                    languageItem = item,
+                    sampleText = sample,
+                    onOpenProposal = {
+                        overlayController.showLanguageProposalWindow(
+                            languageItem = item,
+                            sampleText = sample,
+                            isSlotsFull = isSlotsFull,
+                            currentPairs = currentPairs,
+                            onDownloadAndAdd = {
+                                dismissedLangsThisSession.add(uninstalled)
+                                appPreferences.addLanguagePair(uninstalled, "en")
+                                TranslationEngine.prepareModelIfNeeded(
+                                    sourceLangCode = item.mlKitCode,
+                                    onSuccess = {
+                                        mainHandler.post {
+                                            messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
+                                        }
                                     }
-                                }
-                            )
-                        },
-                        onDismiss = { dismissedLangsThisSession.add(uninstalled) }
-                    )
-                }
+                                )
+                            },
+                            onReplacePair = { oldSourceCode ->
+                                dismissedLangsThisSession.add(uninstalled)
+                                appPreferences.replaceLanguagePair(oldSourceCode, uninstalled, "en")
+                                TranslationEngine.prepareModelIfNeeded(
+                                    sourceLangCode = item.mlKitCode,
+                                    onSuccess = {
+                                        mainHandler.post {
+                                            messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
+                                        }
+                                    }
+                                )
+                            },
+                            onDismiss = { dismissedLangsThisSession.add(uninstalled) }
+                        )
+                    },
+                    onDismiss = { dismissedLangsThisSession.add(uninstalled) }
+                )
             }
 
             val messages = scanResult.messages

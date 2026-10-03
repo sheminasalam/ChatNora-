@@ -240,28 +240,55 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
         // Check if an uninstalled language is discovered and propose language pack
         val uninstalled = scanResult.detectedUninstalledLanguage
         if (uninstalled != null && appPreferences.isAutoDetectPromptEnabled && !dismissedLangsThisSession.contains(uninstalled)) {
-            if (appPreferences.activeSourceLanguages.size < AppPreferences.MAX_ACTIVE_LANGUAGES) {
-                val item = com.bangla.translator.data.SupportedLanguages.findByCode(uninstalled)
-                overlayController.showLanguageProposal(
-                    languageItem = item,
-                    onAccept = {
-                        dismissedLangsThisSession.add(uninstalled)
-                        appPreferences.addActiveSourceLanguage(uninstalled)
-                        TranslationEngine.prepareModelIfNeeded(
-                            sourceLangCode = item.mlKitCode,
-                            onSuccess = {
-                                mainHandler.post {
-                                    messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
-                                    performHierarchyScan()
+            val item = com.bangla.translator.data.SupportedLanguages.findByCode(uninstalled)
+            val sample = scanResult.sampleUninstalledText ?: ""
+            val currentPairs = appPreferences.getLanguagePairs()
+            val isSlotsFull = currentPairs.size >= com.bangla.translator.data.AppPreferences.MAX_ACTIVE_LANGUAGES
+
+            overlayController.showDetectedLanguageBadge(
+                languageItem = item,
+                sampleText = sample,
+                onOpenProposal = {
+                    overlayController.showLanguageProposalWindow(
+                        languageItem = item,
+                        sampleText = sample,
+                        isSlotsFull = isSlotsFull,
+                        currentPairs = currentPairs,
+                        onDownloadAndAdd = {
+                            dismissedLangsThisSession.add(uninstalled)
+                            appPreferences.addLanguagePair(uninstalled, "en")
+                            com.bangla.translator.translation.TranslationEngine.prepareModelIfNeeded(
+                                sourceLangCode = item.mlKitCode,
+                                onSuccess = {
+                                    mainHandler.post {
+                                        messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
+                                        performHierarchyScan()
+                                    }
                                 }
-                            }
-                        )
-                    },
-                    onDismiss = {
-                        dismissedLangsThisSession.add(uninstalled)
-                    }
-                )
-            }
+                            )
+                        },
+                        onReplacePair = { oldSourceCode ->
+                            dismissedLangsThisSession.add(uninstalled)
+                            appPreferences.replaceLanguagePair(oldSourceCode, uninstalled, "en")
+                            com.bangla.translator.translation.TranslationEngine.prepareModelIfNeeded(
+                                sourceLangCode = item.mlKitCode,
+                                onSuccess = {
+                                    mainHandler.post {
+                                        messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
+                                        performHierarchyScan()
+                                    }
+                                }
+                            )
+                        },
+                        onDismiss = {
+                            dismissedLangsThisSession.add(uninstalled)
+                        }
+                    )
+                },
+                onDismiss = {
+                    dismissedLangsThisSession.add(uninstalled)
+                }
+            )
         }
 
         val currentVisibleKeySet = HashSet<String>()

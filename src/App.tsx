@@ -21,7 +21,12 @@ import {
   EyeOff,
   Download,
   PackageCheck,
-  Languages
+  Languages,
+  Plus,
+  Trash2,
+  RefreshCw,
+  Globe,
+  X
 } from 'lucide-react';
 import { downloadProjectZip } from './projectExporter';
 
@@ -258,6 +263,43 @@ jobs:
         with:
           name: BanglaWhatsAppTranslator-debug
           path: app/build/outputs/apk/debug/app-debug.apk`
+  },
+  'AppPreferences.kt': {
+    path: 'app/src/main/java/com/bangla/translator/data/AppPreferences.kt',
+    category: 'Multi-Language Storage',
+    description: 'Manages up to 3 active language pairs (Slot 1, Slot 2, Slot 3), smart auto-detect flags, and pairwise preferences with atomic persistence.',
+    content: `package com.bangla.translator.data
+
+data class LanguagePairPreference(
+    val sourceCode: String,
+    val targetCode: String = "en"
+)
+
+class AppPreferences(context: Context) {
+    // Manages up to 3 simultaneous pairs (MAX_ACTIVE_LANGUAGES = 3)
+    fun getLanguagePairs(): List<LanguagePairPreference> { ... }
+    fun addLanguagePair(sourceCode: String, targetCode: String = "en"): Boolean { ... }
+    fun removeLanguagePair(sourceCode: String): Boolean { ... }
+    fun replaceLanguagePair(oldSourceCode: String, newSourceCode: String, targetCode: String = "en"): Boolean { ... }
+}`
+  },
+  'SupportedLanguages.kt': {
+    path: 'app/src/main/java/com/bangla/translator/data/SupportedLanguages.kt',
+    category: 'Language Catalog',
+    description: 'Catalog of 19+ supported languages with ISO codes, ML Kit codes, native labels, and Unicode range descriptors.',
+    content: `package com.bangla.translator.data
+
+object SupportedLanguages {
+    val ALL = listOf(
+        LanguageItem("bn", "Bengali", "বাংলা", "bn", true),
+        LanguageItem("es", "Spanish", "Español", "es"),
+        LanguageItem("hi", "Hindi", "हिन्दी", "hi"),
+        LanguageItem("fr", "French", "Français", "fr"),
+        LanguageItem("ar", "Arabic", "العربية", "ar"),
+        LanguageItem("de", "German", "Deutsch", "de"),
+        ...
+    )
+}`
   }
 };
 
@@ -271,6 +313,103 @@ interface MessageBubble {
   isBengali: boolean;
 }
 
+export interface SupportedLangMeta {
+  code: string;
+  label: string;
+  nativeName: string;
+  flag: string;
+}
+
+export const ALL_LANGUAGES: SupportedLangMeta[] = [
+  { code: 'bn', label: 'Bengali', nativeName: 'বাংলা', flag: '🇧🇩' },
+  { code: 'es', label: 'Spanish', nativeName: 'Español', flag: '🇪🇸' },
+  { code: 'hi', label: 'Hindi', nativeName: 'हिंदी', flag: '🇮🇳' },
+  { code: 'fr', label: 'French', nativeName: 'Français', flag: '🇫🇷' },
+  { code: 'ar', label: 'Arabic', nativeName: 'العربية', flag: '🇸🇦' },
+  { code: 'de', label: 'German', nativeName: 'Deutsch', flag: '🇩🇪' },
+  { code: 'ja', label: 'Japanese', nativeName: '日本語', flag: '🇯🇵' },
+  { code: 'ru', label: 'Russian', nativeName: 'Русский', flag: '🇷🇺' },
+  { code: 'pt', label: 'Portuguese', nativeName: 'Português', flag: '🇧🇷' },
+  { code: 'it', label: 'Italian', nativeName: 'Italiano', flag: '🇮🇹' },
+  { code: 'zh', label: 'Chinese', nativeName: '中文', flag: '🇨🇳' },
+  { code: 'ko', label: 'Korean', nativeName: '한국어', flag: '🇰🇷' },
+  { code: 'ur', label: 'Urdu', nativeName: 'اردو', flag: '🇵🇰' },
+  { code: 'tr', label: 'Turkish', nativeName: 'Türkçe', flag: '🇹🇷' }
+];
+
+export interface LanguagePair {
+  id: string; // 'pair_1', 'pair_2', 'pair_3'
+  sourceCode: string;
+  targetCode: string;
+  label: string;
+  nativeName: string;
+  flag: string;
+  targetLabel: string;
+  sizeMb: number;
+}
+
+/**
+ * Universal on-device language detector.
+ * Returns recognized language metadata, or null if English / digits / symbols.
+ */
+export function detectMessageLanguage(text: string): SupportedLangMeta | null {
+  if (!text) return null;
+  const trimmed = text.trim();
+  if (trimmed.length < 2) return null;
+  if (/^https?:\/\//i.test(trimmed) || /^\d{1,2}:\d{2}\s?(?:AM|PM|am|pm)?$/.test(trimmed)) return null;
+
+  // Bengali U+0980..U+09FF
+  if (/[\u0980-\u09FF]/.test(trimmed)) {
+    return ALL_LANGUAGES.find(l => l.code === 'bn') || null;
+  }
+  // Hindi (Devanagari) U+0900..U+097F
+  if (/[\u0900-\u097F]/.test(trimmed)) {
+    return ALL_LANGUAGES.find(l => l.code === 'hi') || null;
+  }
+  // Arabic U+0600..U+06FF
+  if (/[\u0600-\u06FF]/.test(trimmed)) {
+    return ALL_LANGUAGES.find(l => l.code === 'ar') || null;
+  }
+  // Japanese Hiragana/Katakana U+3040..U+30FF
+  if (/[\u3040-\u30FF]/.test(trimmed)) {
+    return ALL_LANGUAGES.find(l => l.code === 'ja') || null;
+  }
+  // Chinese U+4E00..U+9FFF
+  if (/[\u4E00-\u9FFF]/.test(trimmed) && !/[\u3040-\u30FF]/.test(trimmed)) {
+    return ALL_LANGUAGES.find(l => l.code === 'zh') || null;
+  }
+  // Russian U+0400..U+04FF
+  if (/[\u0400-\u04FF]/.test(trimmed)) {
+    return ALL_LANGUAGES.find(l => l.code === 'ru') || null;
+  }
+
+  // Lexical & diacritics heuristics for Latin-script languages
+  const lower = trimmed.toLowerCase();
+  // Spanish
+  if (/[¿¡ñáéíóú]/.test(lower) || /\b(hola|amigo|gracias|buenos|dias|tarde|por favor|como|estoy|vamos|hoy|hora|nos vemos|café|pedido|documentos)\b/i.test(lower)) {
+    return ALL_LANGUAGES.find(l => l.code === 'es') || null;
+  }
+  // French
+  if (/[çœæèêëàâùûîï]/.test(lower) || /\b(bonjour|salut|merci|comment|allez|vous|avec|pour|dans|faire|aujourd'hui|très|bien|rapport|réunion)\b/i.test(lower)) {
+    return ALL_LANGUAGES.find(l => l.code === 'fr') || null;
+  }
+  // German
+  if (/[äöüß]/.test(lower) || /\b(hallo|danke|bitte|guten|morgen|wie|geht|nicht|freund|heute|nachmittag|laptop|treffen)\b/i.test(lower)) {
+    return ALL_LANGUAGES.find(l => l.code === 'de') || null;
+  }
+  // Portuguese
+  if (/[ãõ]/.test(lower) || /\b(ola|obrigado|obrigada|voce|tudo bem|bom dia|boa tarde|amigo)\b/i.test(lower)) {
+    return ALL_LANGUAGES.find(l => l.code === 'pt') || null;
+  }
+  // Italian
+  if (/\b(ciao|grazie|prego|come stai|buongiorno|buonasera|amico|molto bene)\b/i.test(lower)) {
+    return ALL_LANGUAGES.find(l => l.code === 'it') || null;
+  }
+
+  // English messages or no foreign markers -> null (Ignored by detection!)
+  return null;
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<'simulator' | 'tester' | 'code' | 'audit' | 'scenarios' | 'download'>('download');
   const [isDownloadingZip, setIsDownloadingZip] = useState<boolean>(false);
@@ -281,7 +420,8 @@ export default function App() {
   const [simulatedPendingTask, setSimulatedPendingTask] = useState<boolean>(false);
   const [statusLog, setStatusLog] = useState<string[]>([
     '[INIT] BanglaAccessibilityService connected.',
-    '[GEN 10] Session initialized for Chat A (Rafiq - Dhaka).'
+    '[GEN 10] Session initialized for Chat A (Rafiq - Dhaka).',
+    '[PAIRS] Slot 1 active: Bengali (বাংলা) → English (30MB Ready).'
   ]);
 
   // Bengali Detection Playground state
@@ -292,45 +432,225 @@ export default function App() {
   const [expandedMsgId, setExpandedMsgId] = useState<string | null>(null);
   const [selectedLang, setSelectedLang] = useState<'bn' | 'es' | 'hi' | 'fr' | 'ar' | 'de'>('bn');
   
-  // Smart Multi-Language Active Packs (Max 3 to protect RAM & Storage)
-  const [activePacks, setActivePacks] = useState<string[]>(['bn']);
+  // Multi-Language Active Pairs Management (Up to 3 pairs to protect RAM & Storage)
+  const [activePairs, setActivePairs] = useState<LanguagePair[]>([
+    {
+      id: 'pair_1',
+      sourceCode: 'bn',
+      targetCode: 'en',
+      label: 'Bengali',
+      nativeName: 'বাংলা',
+      flag: '🇧🇩',
+      targetLabel: 'English',
+      sizeMb: 30
+    }
+  ]);
+
+  // Derived active language codes
+  const activePacks = useMemo(() => activePairs.map(p => p.sourceCode), [activePairs]);
   const [isAutoDetectPromptEnabled, setIsAutoDetectPromptEnabled] = useState<boolean>(true);
   const [downloadingPack, setDownloadingPack] = useState<string | null>(null);
   const [dismissedPacks, setDismissedPacks] = useState<string[]>([]);
 
-  const handleDownloadPack = (langCode: string) => {
-    if (activePacks.includes(langCode)) return;
-    if (activePacks.length >= 3) {
-      alert("Maximum 3 active language packs reached to protect phone RAM & storage. Please remove one language first.");
-      return;
-    }
-    setDownloadingPack(langCode);
-    const langLabel = multiLangChats[langCode as keyof typeof multiLangChats]?.label || langCode;
-    setStatusLog(prev => [
-      `[SMART DETECT] Auto-detected ${langLabel}. Downloading ML Kit model (~30MB) in background...`,
-      ...prev.slice(0, 8)
-    ]);
-    setTimeout(() => {
-      setActivePacks(prev => [...prev, langCode]);
-      setDownloadingPack(null);
-      setStatusLog(prev => [
-        `[PACK ACTIVATED] ${langLabel} (~30MB) installed! Active slots: ${activePacks.length + 1}/3. In-chat translations rendered.`,
-        ...prev.slice(0, 8)
-      ]);
-    }, 850);
+  // Manual Add Pair Dialog State
+  const [showAddPairModal, setShowAddPairModal] = useState<boolean>(false);
+  const [manualAddSource, setManualAddSource] = useState<string>('es');
+  const [manualAddTarget, setManualAddTarget] = useState<string>('en');
+
+  // Live Detection Popup & Modal State (Top-Right Corner Icon)
+  const [showDetectedLangModal, setShowDetectedLangModal] = useState<boolean>(false);
+  const [pairToReplace, setPairToReplace] = useState<string>('pair_1');
+  const [chatInputText, setChatInputText] = useState<string>('');
+
+  // Dynamic conversation messages for Chat A so user can simulate new incoming messages
+  const [dynamicMessages, setDynamicMessages] = useState<MessageBubble[]>([
+    { id: 'bn1', sender: 'Moni', text: 'এটা ফেটে যাবে এবং পপকর্ন বেরিয়ে আসবে।', isMe: true, time: '11:27 AM', translated: 'It will burst and popcorn will come out.', isBengali: true },
+    { id: 'bn2', sender: 'Moni', text: 'করে রান্না করুন', isMe: true, time: '11:28 AM', translated: 'Cook it properly.', isBengali: true },
+    { id: 'bn3', sender: 'Me', text: 'ভাত বসালাম', isMe: false, time: '11:28 AM', translated: 'I put the rice on to cook.', isBengali: true },
+    { id: 'bn4', sender: 'Moni', text: 'তোমার আজকে কি কাজ?', isMe: false, time: '11:29 AM', translated: 'What work do you have today?', isBengali: true },
+    { id: 'bn5', sender: 'Me', text: 'এখনো বিদ্যুৎ আসেনি', isMe: false, time: '11:30 AM', translated: 'Electricity has not returned yet.', isBengali: true },
+  ]);
+
+  // Reset chat messages when switching language preset in quick switcher
+  const handleQuickLanguageSwitch = (lang: 'bn' | 'es' | 'hi' | 'fr' | 'ar' | 'de') => {
+    setSelectedLang(lang);
+    setExpandedMsgId(null);
+    setDynamicMessages(multiLangChats[lang].messages);
+    // Un-dismiss to ensure detection triggers for testing
+    setDismissedPacks(prev => prev.filter(p => p !== lang));
   };
 
-  const handleRemovePack = (langCode: string) => {
-    if (activePacks.length <= 1) {
-      alert("At least 1 language pack must remain active.");
+  // In-app feedback toast
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  // Manual Add Language Pair (up to 3)
+  const handleAddLanguagePairManually = (sourceCode: string, targetCode: string = 'en') => {
+    if (activePairs.some(p => p.sourceCode === sourceCode)) {
+      showToast(`${sourceCode.toUpperCase()} language pair is already configured.`);
       return;
     }
-    setActivePacks(prev => prev.filter(p => p !== langCode));
-    const langLabel = multiLangChats[langCode as keyof typeof multiLangChats]?.label || langCode;
+    if (activePairs.length >= 3) {
+      showToast("Maximum 3 active language pairs reached. Please replace an existing pair.");
+      return;
+    }
+
+    const langMeta = ALL_LANGUAGES.find(l => l.code === sourceCode);
+    if (!langMeta) return;
+
+    setDownloadingPack(sourceCode);
     setStatusLog(prev => [
-      `[PURGED] ${langLabel} pack deleted. 30MB storage freed. Active slots: ${activePacks.length - 1}/3.`,
+      `[MANUAL SETUP] Adding ${langMeta.label} ↔ English pair. Downloading ML Kit model (~30MB)...`,
       ...prev.slice(0, 8)
     ]);
+
+    setTimeout(() => {
+      const newPair: LanguagePair = {
+        id: `pair_${Date.now()}`,
+        sourceCode: langMeta.code,
+        targetCode: targetCode,
+        label: langMeta.label,
+        nativeName: langMeta.nativeName,
+        flag: langMeta.flag,
+        targetLabel: targetCode === 'en' ? 'English' : targetCode.toUpperCase(),
+        sizeMb: 30
+      };
+      setActivePairs(prev => [...prev, newPair]);
+      setDownloadingPack(null);
+      setShowAddPairModal(false);
+      showToast(`Activated ${langMeta.label} ↔ ${newPair.targetLabel} pair!`);
+      setStatusLog(prev => [
+        `[PAIR ACTIVE] Slot #${activePairs.length + 1} activated: ${langMeta.label} (${langMeta.nativeName}) ↔ English. Ready for offline translations!`,
+        ...prev.slice(0, 8)
+      ]);
+    }, 700);
+  };
+
+  // Remove a language pair
+  const handleRemoveLanguagePair = (pairId: string) => {
+    if (activePairs.length <= 1) {
+      showToast("At least 1 language pair must remain active.");
+      return;
+    }
+    const targetPair = activePairs.find(p => p.id === pairId);
+    setActivePairs(prev => prev.filter(p => p.id !== pairId));
+    if (targetPair) {
+      showToast(`Removed ${targetPair.label} pair (Slot freed)`);
+      setStatusLog(prev => [
+        `[PAIR REMOVED] Deleted ${targetPair.label} pair. 30MB storage freed. Active slots: ${activePairs.length - 1}/3.`,
+        ...prev.slice(0, 8)
+      ]);
+    }
+  };
+
+  // Direct download & add when slot available (< 3)
+  const handleDirectDownloadAndAdd = (langCode: string) => {
+    handleAddLanguagePairManually(langCode, 'en');
+    setShowDetectedLangModal(false);
+  };
+
+  // Replace one pair with new language when slots are full (3/3)
+  const handleReplaceAndDownload = (newSourceCode: string, targetPairIdToReplace: string) => {
+    const langMeta = ALL_LANGUAGES.find(l => l.code === newSourceCode);
+    if (!langMeta) return;
+
+    const oldPair = activePairs.find(p => p.id === targetPairIdToReplace);
+    setDownloadingPack(newSourceCode);
+    setStatusLog(prev => [
+      `[REPLACING PAIR] Swapping out ${oldPair?.label || 'old pair'} for ${langMeta.label} (~30MB)...`,
+      ...prev.slice(0, 8)
+    ]);
+
+    setTimeout(() => {
+      const newPair: LanguagePair = {
+        id: targetPairIdToReplace,
+        sourceCode: langMeta.code,
+        targetCode: 'en',
+        label: langMeta.label,
+        nativeName: langMeta.nativeName,
+        flag: langMeta.flag,
+        targetLabel: 'English',
+        sizeMb: 30
+      };
+
+      setActivePairs(prev => prev.map(p => p.id === targetPairIdToReplace ? newPair : p));
+      setDownloadingPack(null);
+      setShowDetectedLangModal(false);
+      setStatusLog(prev => [
+        `[PACK REPLACED] ${oldPair?.label || 'Previous pair'} replaced by ${langMeta.label} (${langMeta.nativeName}). Active slots remain optimal at 3/3!`,
+        ...prev.slice(0, 8)
+      ]);
+    }, 750);
+  };
+
+  // Simulate an incoming message in a specific language
+  const handleSimulateIncoming = (langCode: string) => {
+    const presets: Record<string, { text: string; sender: string; translated?: string }> = {
+      es: { text: '¡Hola amigo! ¿A qué hora nos vemos hoy?', sender: 'Carlos', translated: 'Hello friend! What time are we meeting today?' },
+      fr: { text: "Bonjour mon ami, comment vas-tu aujourd'hui?", sender: 'Julien', translated: 'Hello my friend, how are you today?' },
+      de: { text: 'Hallo mein Freund, wie geht es dir heute?', sender: 'Lukas', translated: 'Hello my friend, how are you today?' },
+      ar: { text: 'مرحباً يا أخي، كيف حالك وأين أنت الآن؟', sender: 'Tariq', translated: 'Hello my brother, how are you and where are you now?' },
+      hi: { text: 'नमस्ते भाई, आप कैसे हैं और कहाँ जा रहे हैं?', sender: 'Rohit', translated: 'Hello brother, how are you and where are you going?' },
+      ja: { text: 'こんにちは、今日のミーティングは何時ですか？', sender: 'Kenji', translated: 'Hello, what time is the meeting today?' },
+      bn: { text: 'তুমি কোথায় আছো এখন? জরুরি কথা ছিল।', sender: 'Rafiq', translated: 'Where are you right now? Had an urgent matter.' },
+      en: { text: 'Hey, are we still meeting today at 4 PM?', sender: 'David' }
+    };
+
+    const item = presets[langCode];
+    if (!item) return;
+
+    const newMsg: MessageBubble = {
+      id: `msg_sim_${Date.now()}`,
+      sender: item.sender,
+      text: item.text,
+      isMe: false,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      translated: item.translated,
+      isBengali: langCode === 'bn'
+    };
+
+    setDynamicMessages(prev => [...prev, newMsg]);
+    setDismissedPacks(prev => prev.filter(p => p !== langCode));
+
+    const isDownloaded = activePacks.includes(langCode);
+    const isEnglish = langCode === 'en';
+
+    if (isEnglish) {
+      setStatusLog(prev => [
+        `[MESSAGE ARRIVED] English message received from ${item.sender}. Live detection ignores English as intended.`,
+        ...prev.slice(0, 8)
+      ]);
+    } else if (isDownloaded) {
+      setStatusLog(prev => [
+        `[MESSAGE ARRIVED] Message in downloaded language (${langCode.toUpperCase()}) from ${item.sender}. Instant translation badge displayed!`,
+        ...prev.slice(0, 8)
+      ]);
+    } else {
+      setStatusLog(prev => [
+        `[LIVE DETECTED] Uninstalled language (${langCode.toUpperCase()}) recognized from ${item.sender}! Small icon popup shown on right top corner.`,
+        ...prev.slice(0, 8)
+      ]);
+    }
+  };
+
+  // Handle typing send
+  const handleSendCustomMessage = () => {
+    if (!chatInputText.trim()) return;
+    const detected = detectMessageLanguage(chatInputText);
+    const newMsg: MessageBubble = {
+      id: `msg_custom_${Date.now()}`,
+      sender: 'Me',
+      text: chatInputText.trim(),
+      isMe: true,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      translated: detected ? `[Translated to English]: ${chatInputText.trim()}` : undefined,
+      isBengali: detected?.code === 'bn'
+    };
+    setDynamicMessages(prev => [...prev, newMsg]);
+    setChatInputText('');
   };
 
   // Multi-Language Chats Catalog
@@ -406,14 +726,37 @@ export default function App() {
 
   // Chat messages mock
   const chatMessages: Record<'chatA' | 'chatB', MessageBubble[]> = useMemo(() => ({
-    chatA: multiLangChats[selectedLang].messages,
+    chatA: dynamicMessages,
     chatB: [
       { id: 'm7', sender: 'Tanvir (Chittagong)', text: 'ভাই আপনার সাথে জরুরি কথা ছিল।', isMe: false, time: '11:02 AM', translated: 'Brother, I had an urgent matter to discuss with you.', isBengali: true },
       { id: 'm8', sender: 'Me', text: 'Sure Tanvir, what is it about?', isMe: true, time: '11:03 AM', isBengali: false },
       { id: 'm9', sender: 'Tanvir (Chittagong)', text: 'তুমি কোথায় আছো এখন?', isMe: false, time: '11:04 AM', translated: 'Where are you right now?', isBengali: true },
       { id: 'm10', sender: 'Tanvir (Chittagong)', text: 'https://example.com/report.pdf এই লিংকটা দেখুন।', isMe: false, time: '11:05 AM', translated: 'Check this link out.', isBengali: true },
     ]
-  }), [selectedLang, multiLangChats]);
+  }), [dynamicMessages]);
+
+  // Live Language Detection: Inspects messages in the active chat.
+  // If an incoming message is NOT English, NOT in active downloaded pairs, and not dismissed,
+  // return its metadata to trigger the top-right corner icon popup!
+  const detectedNewLanguageAlert = useMemo(() => {
+    if (!isAutoDetectPromptEnabled || activeChat === 'home') return null;
+    const currentMessages = chatMessages[activeChat] || [];
+    for (const msg of currentMessages) {
+      const detected = detectMessageLanguage(msg.text);
+      if (detected && !activePacks.includes(detected.code) && !dismissedPacks.includes(detected.code)) {
+        return {
+          code: detected.code,
+          label: detected.label,
+          nativeName: detected.nativeName,
+          flag: detected.flag,
+          sampleText: msg.text,
+          sender: msg.sender,
+          confidence: 98
+        };
+      }
+    }
+    return null;
+  }, [chatMessages, activeChat, activePacks, dismissedPacks, isAutoDetectPromptEnabled]);
 
   // Compute Bengali test metrics
   const bengaliAnalysis = useMemo(() => {
@@ -571,6 +914,16 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {/* In-app Toast Banner */}
+      {toastMessage && (
+        <div className="fixed top-20 right-6 z-50 animate-in fade-in slide-in-from-top-3">
+          <div className="bg-emerald-950 border border-emerald-500/80 text-emerald-200 px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 text-xs font-semibold backdrop-blur">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
 
       {/* Main Content Area */}
       <main className="flex-1 p-6 max-w-7xl mx-auto w-full">
@@ -743,20 +1096,17 @@ export default function App() {
             {/* Interactive Phone Frame */}
             <div className="lg:col-span-6 flex flex-col items-center">
               {/* Universal Language Quick Switcher */}
-              <div className="w-full max-w-sm mb-3">
+              <div className="w-full max-w-sm mb-2">
                 <div className="text-[11px] font-semibold text-slate-400 mb-1.5 flex items-center justify-between">
-                  <span>Simulate Source Language:</span>
+                  <span>Chat Preset Language:</span>
                   <span className="text-emerald-400 font-bold">{multiLangChats[selectedLang].flag} {multiLangChats[selectedLang].label}</span>
                 </div>
                 <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 bg-slate-900/90 p-1.5 rounded-xl border border-slate-800">
                   {(['bn', 'es', 'hi', 'fr', 'ar', 'de'] as const).map((lang) => (
                     <button
                       key={lang}
-                      onClick={() => {
-                        setSelectedLang(lang);
-                        setExpandedMsgId(null);
-                      }}
-                      className={`px-2 py-1 rounded-lg text-[11px] font-medium transition flex items-center justify-center gap-1 ${
+                      onClick={() => handleQuickLanguageSwitch(lang)}
+                      className={`px-2 py-1 rounded-lg text-[11px] font-medium transition flex items-center justify-center gap-1 cursor-pointer ${
                         selectedLang === lang
                           ? 'bg-emerald-600 text-white shadow font-bold'
                           : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
@@ -766,6 +1116,72 @@ export default function App() {
                       <span className="truncate">{multiLangChats[lang].label.slice(0, 4)}</span>
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* Simulation Toolbar: Simulate Incoming Foreign Messages */}
+              <div className="w-full max-w-sm mb-3 bg-slate-900/70 p-2 rounded-xl border border-slate-800">
+                <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  <span className="flex items-center gap-1"><Sparkles className="w-3 h-3 text-emerald-400" /> Simulate Incoming Message:</span>
+                  <span className="text-emerald-400">Live Detector</span>
+                </div>
+                <div className="grid grid-cols-4 gap-1">
+                  <button
+                    onClick={() => handleSimulateIncoming('es')}
+                    className="p-1 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/60 text-[10px] flex items-center justify-center gap-1 text-slate-200 transition cursor-pointer"
+                    title="Simulate Spanish message (triggers live detection popup if not installed)"
+                  >
+                    <span>🇪🇸</span> <span className="font-semibold truncate">Spanish</span>
+                  </button>
+                  <button
+                    onClick={() => handleSimulateIncoming('fr')}
+                    className="p-1 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/60 text-[10px] flex items-center justify-center gap-1 text-slate-200 transition cursor-pointer"
+                    title="Simulate French message"
+                  >
+                    <span>🇫🇷</span> <span className="font-semibold truncate">French</span>
+                  </button>
+                  <button
+                    onClick={() => handleSimulateIncoming('de')}
+                    className="p-1 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/60 text-[10px] flex items-center justify-center gap-1 text-slate-200 transition cursor-pointer"
+                    title="Simulate German message"
+                  >
+                    <span>🇩🇪</span> <span className="font-semibold truncate">German</span>
+                  </button>
+                  <button
+                    onClick={() => handleSimulateIncoming('ar')}
+                    className="p-1 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/60 text-[10px] flex items-center justify-center gap-1 text-slate-200 transition cursor-pointer"
+                    title="Simulate Arabic message"
+                  >
+                    <span>🇸🇦</span> <span className="font-semibold truncate">Arabic</span>
+                  </button>
+                  <button
+                    onClick={() => handleSimulateIncoming('hi')}
+                    className="p-1 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/60 text-[10px] flex items-center justify-center gap-1 text-slate-200 transition cursor-pointer"
+                    title="Simulate Hindi message"
+                  >
+                    <span>🇮🇳</span> <span className="font-semibold truncate">Hindi</span>
+                  </button>
+                  <button
+                    onClick={() => handleSimulateIncoming('ja')}
+                    className="p-1 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/60 text-[10px] flex items-center justify-center gap-1 text-slate-200 transition cursor-pointer"
+                    title="Simulate Japanese message"
+                  >
+                    <span>🇯🇵</span> <span className="font-semibold truncate">Japanese</span>
+                  </button>
+                  <button
+                    onClick={() => handleSimulateIncoming('bn')}
+                    className="p-1 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/60 text-[10px] flex items-center justify-center gap-1 text-slate-200 transition cursor-pointer"
+                    title="Simulate Bengali message (Installed pair)"
+                  >
+                    <span>🇧🇩</span> <span className="font-semibold truncate">Bengali</span>
+                  </button>
+                  <button
+                    onClick={() => handleSimulateIncoming('en')}
+                    className="p-1 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-sky-500/60 text-[10px] flex items-center justify-center gap-1 text-slate-400 transition cursor-pointer"
+                    title="Simulate English message (Ignored by detection)"
+                  >
+                    <span>🇬🇧</span> <span className="font-semibold truncate">English</span>
+                  </button>
                 </div>
               </div>
 
@@ -806,7 +1222,7 @@ export default function App() {
                     <div className="grid grid-cols-3 gap-6 pb-6">
                       <button
                         onClick={() => switchChat('chatA')}
-                        className="flex flex-col items-center space-y-1 hover:scale-105 transition"
+                        className="flex flex-col items-center space-y-1 hover:scale-105 transition cursor-pointer"
                       >
                         <div className="w-12 h-12 rounded-2xl bg-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-900/50">
                           <Smartphone className="w-6 h-6 text-white" />
@@ -816,7 +1232,7 @@ export default function App() {
 
                       <button
                         onClick={() => switchChat('chatB')}
-                        className="flex flex-col items-center space-y-1 hover:scale-105 transition"
+                        className="flex flex-col items-center space-y-1 hover:scale-105 transition cursor-pointer"
                       >
                         <div className="w-12 h-12 rounded-2xl bg-teal-600 flex items-center justify-center shadow-lg shadow-teal-900/50">
                           <Smartphone className="w-6 h-6 text-white" />
@@ -834,9 +1250,9 @@ export default function App() {
                   </div>
                 ) : (
                   // WhatsApp Chat Interface
-                  <div className="flex-1 bg-[#0b141a] rounded-2xl flex flex-col overflow-hidden border border-slate-800">
+                  <div className="flex-1 bg-[#0b141a] rounded-2xl flex flex-col overflow-hidden border border-slate-800 relative">
                     {/* Chat Header */}
-                    <div className="bg-[#202c33] px-3 py-2.5 flex items-center justify-between text-slate-100">
+                    <div className="bg-[#202c33] px-3 py-2.5 flex items-center justify-between text-slate-100 z-10">
                       <div className="flex items-center space-x-2">
                         <div className="w-8 h-8 rounded-full bg-emerald-800 flex items-center justify-center font-bold text-xs text-emerald-200">
                           {activeChat === 'chatA' ? 'RD' : 'TC'}
@@ -848,10 +1264,199 @@ export default function App() {
                           <div className="text-[10px] text-emerald-400">online</div>
                         </div>
                       </div>
-                      <div className="text-[10px] px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-800 text-emerald-300">
+                      <div className="text-[10px] px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-800 text-emerald-300 font-mono">
                         Gen #{sessionGen}
                       </div>
                     </div>
+
+                    {/* LIVE DETECTION: SMALL ICON POPUP ON RIGHT TOP CORNER */}
+                    {detectedNewLanguageAlert && !activePacks.includes(detectedNewLanguageAlert.code) && !dismissedPacks.includes(detectedNewLanguageAlert.code) && (
+                      <div className="absolute top-14 right-2.5 z-30 animate-in fade-in zoom-in duration-300">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowDetectedLangModal(true);
+                          }}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/95 border-2 border-emerald-400 shadow-xl shadow-emerald-950/80 text-emerald-300 hover:scale-110 active:scale-95 transition cursor-pointer group animate-pulse"
+                          title={`New language detected: ${detectedNewLanguageAlert.label}. Click to inspect & download offline pack.`}
+                        >
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
+                          </span>
+                          <span className="text-xs">{detectedNewLanguageAlert.flag}</span>
+                          <span className="text-[10px] font-black text-white">{detectedNewLanguageAlert.code.toUpperCase()}</span>
+                          <Languages className="w-3 h-3 text-emerald-400" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* WINDOW LIKE THE CHAT TRANSLATION WINDOW: SHOWING RECOGNIZED LANGUAGE & PACK SUGGESTION */}
+                    {showDetectedLangModal && detectedNewLanguageAlert && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute inset-x-2 top-14 z-40 animate-fadeIn"
+                      >
+                        <div
+                          className="bg-[#202c33] border border-[#2a3942] rounded-2xl p-3.5 shadow-2xl text-slate-100 relative"
+                          style={{ boxShadow: '0 12px 28px rgba(0,0,0,0.85)' }}
+                        >
+                          {/* Header */}
+                          <div className="flex items-center justify-between pb-2 border-b border-[#2a3942] mb-2.5">
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 text-xs">
+                                <Languages className="w-3.5 h-3.5" />
+                              </div>
+                              <div>
+                                <div className="text-[11px] font-bold text-[#E9EDEF] flex items-center gap-1.5">
+                                  <span>Recognized New Language</span>
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 font-semibold">
+                                    {detectedNewLanguageAlert.confidence}% Match
+                                  </span>
+                                </div>
+                                <div className="text-[9px] text-[#8696A0]">Live ML Kit On-Device Detection</div>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => setShowDetectedLangModal(false)}
+                              className="w-5 h-5 rounded hover:bg-[#182229] text-[#8696A0] hover:text-white flex items-center justify-center text-xs cursor-pointer"
+                            >
+                              ✕
+                            </button>
+                          </div>
+
+                          {/* Recognized Language Banner */}
+                          <div className="bg-[#111b21] p-2.5 rounded-xl border border-[#2a3942] mb-2.5">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="text-2xl">{detectedNewLanguageAlert.flag}</span>
+                                <div>
+                                  <div className="text-xs font-bold text-white leading-tight">{detectedNewLanguageAlert.label}</div>
+                                  <div className="text-[10px] text-emerald-400 font-medium">{detectedNewLanguageAlert.nativeName}</div>
+                                </div>
+                              </div>
+                              <span className="text-[9px] px-2 py-0.5 rounded bg-emerald-900/70 text-emerald-300 font-semibold border border-emerald-700/60 font-mono">
+                                ~30MB Pack
+                              </span>
+                            </div>
+
+                            {/* Quote snippet from incoming message */}
+                            <div className="mt-2 pt-2 border-t border-[#202c33] text-[11px] text-slate-300 bg-[#0b141a] p-2 rounded-lg">
+                              <span className="text-emerald-400 font-semibold text-[10px] block mb-0.5">
+                                Incoming message from {detectedNewLanguageAlert.sender}:
+                              </span>
+                              <span className="italic leading-snug block">&ldquo;{detectedNewLanguageAlert.sampleText}&rdquo;</span>
+                            </div>
+                          </div>
+
+                          <p className="text-[11px] text-[#8696A0] mb-3 leading-relaxed">
+                            Download the local offline language pack to translate incoming and outgoing {detectedNewLanguageAlert.label} messages directly in WhatsApp.
+                          </p>
+
+                          {/* CASE 1: PACKS FULL (3/3 Slots) -> Ask for replacing one pair with this new one */}
+                          {activePairs.length >= 3 ? (
+                            <div className="space-y-2 mb-2">
+                              <div className="p-2 rounded-xl bg-amber-950/60 border border-amber-800/80 text-amber-200 text-[10px] flex items-start gap-1.5">
+                                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-400" />
+                                <div>
+                                  <div className="font-bold text-amber-300">All 3 Language Pair Slots are Full</div>
+                                  <div className="opacity-90">To protect phone RAM &amp; battery, select which pair to replace with {detectedNewLanguageAlert.label}:</div>
+                                </div>
+                              </div>
+
+                              <div className="space-y-1.5">
+                                {activePairs.map((pair) => (
+                                  <label
+                                    key={pair.id}
+                                    onClick={() => setPairToReplace(pair.id)}
+                                    className={`flex items-center justify-between p-2 rounded-xl border text-xs cursor-pointer transition ${
+                                      pairToReplace === pair.id
+                                        ? 'bg-emerald-950/80 border-emerald-500 text-white shadow-sm'
+                                        : 'bg-[#111b21] border-[#2a3942] text-slate-300 hover:border-slate-600'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="radio"
+                                        name="replacePairOption"
+                                        checked={pairToReplace === pair.id}
+                                        onChange={() => setPairToReplace(pair.id)}
+                                        className="accent-emerald-500 cursor-pointer"
+                                      />
+                                      <span className="text-base">{pair.flag}</span>
+                                      <div>
+                                        <div className="font-semibold text-xs leading-tight">{pair.label}</div>
+                                        <div className="text-[10px] text-slate-400">({pair.nativeName}) → {pair.targetLabel}</div>
+                                      </div>
+                                    </div>
+                                    <span className="text-[10px] font-mono text-emerald-400 font-semibold">{pair.sizeMb}MB</span>
+                                  </label>
+                                ))}
+                              </div>
+
+                              <div className="flex items-center gap-2 pt-2">
+                                <button
+                                  onClick={() => handleReplaceAndDownload(detectedNewLanguageAlert.code, pairToReplace)}
+                                  disabled={!!downloadingPack}
+                                  className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                >
+                                  {downloadingPack === detectedNewLanguageAlert.code ? (
+                                    <>
+                                      <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                      <span>Replacing &amp; Downloading...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <RefreshCw className="w-3.5 h-3.5" />
+                                      <span>Replace Pair &amp; Download {detectedNewLanguageAlert.label}</span>
+                                    </>
+                                  )}
+                                </button>
+                                <button
+                                  onClick={() => setShowDetectedLangModal(false)}
+                                  className="px-3 py-2 rounded-xl bg-[#111b21] border border-[#2a3942] text-slate-400 hover:text-white text-xs cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            /* CASE 2: SLOTS AVAILABLE (< 3) -> Download and add as pair 2 or 3 */
+                            <div className="space-y-2 mb-1">
+                              <div className="text-[10px] text-emerald-400 font-medium flex items-center justify-between">
+                                <span>Available Slot: Pair #{activePairs.length + 1} of 3</span>
+                                <span className="font-mono">RAM Safe &bull; 30MB</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => handleDirectDownloadAndAdd(detectedNewLanguageAlert.code)}
+                                  disabled={!!downloadingPack}
+                                  className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                >
+                                  {downloadingPack === detectedNewLanguageAlert.code ? (
+                                    <>
+                                      <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                      <span>Downloading Model (~30MB)...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Download className="w-3.5 h-3.5" />
+                                      <span>Download &amp; Add as Pair #{activePairs.length + 1}</span>
+                                    </>
+                                  )}
+                                </button>
+                                <button
+                                  onClick={() => setShowDetectedLangModal(false)}
+                                  className="px-3 py-2 rounded-xl bg-[#111b21] border border-[#2a3942] text-slate-400 hover:text-white text-xs cursor-pointer"
+                                >
+                                  Later
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Messages Scroll View (Click anywhere closes expanded translation) */}
                     <div
@@ -868,60 +1473,22 @@ export default function App() {
                         </span>
                       </div>
 
-                      {/* Floating Language Pack Proposal Banner (when an uninstalled language is detected) */}
-                      {!activePacks.includes(selectedLang) && isAutoDetectPromptEnabled && !dismissedPacks.includes(selectedLang) && (
-                        <div className="bg-gradient-to-r from-emerald-950/95 via-slate-900 to-slate-900 border border-emerald-500/60 rounded-xl p-2.5 shadow-xl flex items-center justify-between gap-2 animate-in fade-in slide-in-from-top-2 duration-300 z-20">
-                          <div className="flex items-center gap-2 text-left">
-                            <span className="text-xl">{multiLangChats[selectedLang].flag}</span>
-                            <div>
-                              <div className="text-[11px] font-bold text-white flex items-center gap-1.5">
-                                <span>{multiLangChats[selectedLang].label} detected in chat</span>
-                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-900/80 text-emerald-300 font-semibold border border-emerald-700/60">30MB</span>
-                              </div>
-                              <div className="text-[10px] text-slate-300">
-                                Download offline model to enable instant translation?
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              onClick={() => handleDownloadPack(selectedLang)}
-                              disabled={downloadingPack === selectedLang}
-                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] shadow transition flex items-center gap-1 disabled:opacity-50 cursor-pointer"
-                            >
-                              {downloadingPack === selectedLang ? (
-                                <>
-                                  <div className="w-2.5 h-2.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                  <span>Installing...</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Download className="w-3 h-3" />
-                                  <span>Download</span>
-                                </>
-                              )}
-                            </button>
-                            <button
-                              onClick={() => setDismissedPacks(prev => [...prev, selectedLang])}
-                              className="w-5 h-5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center text-xs cursor-pointer"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
                       {chatMessages[activeChat].map((msg) => {
                         const isExpanded = expandedMsgId === msg.id;
                         const isOtherExpanded = expandedMsgId !== null && !isExpanded;
-                        const isPackActive = activePacks.includes(selectedLang);
+
+                        // Check if this message is in any of the downloaded active pairs
+                        const msgLang = detectMessageLanguage(msg.text);
+                        const msgLangCode = msgLang ? msgLang.code : (msg.isBengali ? 'bn' : null);
+                        const matchedPair = msgLangCode ? activePairs.find(p => p.sourceCode === msgLangCode) : null;
+                        const isPackActive = !!matchedPair;
 
                         return (
                           <div
                             key={msg.id}
                             className={`flex flex-col ${msg.isMe ? 'items-end' : 'items-start'}`}
                           >
-                            {/* Message Row with Middle-Side Translation Badge */}
+                            {/* Message Row with Middle-Side Translation Badge - ALIGNMENT PRESERVED EXACTLY AS DESIGNED */}
                             <div className={`flex items-center gap-1.5 max-w-[95%] ${msg.isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                               {/* Original WhatsApp Bubble */}
                               <div
@@ -942,7 +1509,7 @@ export default function App() {
                                     e.stopPropagation();
                                     setExpandedMsgId(msg.id);
                                   }}
-                                  className={`flex items-center gap-1 px-1.5 py-0.5 rounded-[8px] border shadow-sm transition hover:scale-105 active:scale-95 shrink-0 ${
+                                  className={`flex items-center gap-1 px-1.5 py-0.5 rounded-[8px] border shadow-sm transition hover:scale-105 active:scale-95 shrink-0 cursor-pointer ${
                                     msg.isMe
                                       ? 'bg-[#0B2B20] border-[#144635] text-[#25D366]'
                                       : 'bg-[#1F2C34] border-[#2A3942] text-[#8696A0]'
@@ -951,21 +1518,6 @@ export default function App() {
                                 >
                                   <Languages className="w-2.5 h-2.5" />
                                   <span className="text-[9px] font-bold">EN</span>
-                                </button>
-                              )}
-
-                              {/* Uninstalled Language Pack Prompt Badge */}
-                              {overlayEnabled && msg.translated && !isPackActive && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDownloadPack(selectedLang);
-                                  }}
-                                  className="flex items-center gap-1 px-1.5 py-0.5 rounded-[8px] border border-dashed border-slate-600 bg-slate-800/80 text-slate-400 hover:text-emerald-300 hover:border-emerald-500 text-[9px] transition shrink-0 cursor-pointer"
-                                  title={`Download ${multiLangChats[selectedLang].label} pack to translate`}
-                                >
-                                  <Download className="w-2.5 h-2.5" />
-                                  <span>+ {multiLangChats[selectedLang].label.slice(0, 4)}</span>
                                 </button>
                               )}
                             </div>
@@ -993,7 +1545,7 @@ export default function App() {
                                         msg.isMe ? 'text-[#25D366]' : 'text-[#8696A0]'
                                       }`}
                                     >
-                                      {multiLangChats[selectedLang].nativeName} → English
+                                      {matchedPair ? matchedPair.nativeName : (msgLang?.nativeName || 'Foreign')} → English
                                     </span>
                                     <span className="text-[9px] text-slate-500 font-mono ml-2">click anywhere to close</span>
                                   </div>
@@ -1010,12 +1562,21 @@ export default function App() {
 
                     {/* Chat Input Bar */}
                     <div className="bg-[#202c33] px-3 py-2 flex items-center gap-2">
-                      <div className="flex-1 bg-[#2a3942] rounded-full px-3 py-1.5 text-xs text-slate-400">
-                        Type a message
-                      </div>
-                      <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-white">
+                      <input
+                        type="text"
+                        value={chatInputText}
+                        onChange={(e) => setChatInputText(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleSendCustomMessage()}
+                        placeholder="Type message in any language..."
+                        className="flex-1 bg-[#2a3942] rounded-full px-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-400 focus:outline-none"
+                      />
+                      <button
+                        onClick={handleSendCustomMessage}
+                        className="w-8 h-8 rounded-full bg-emerald-600 hover:bg-emerald-500 flex items-center justify-center text-white transition cursor-pointer shrink-0"
+                        title="Send message"
+                      >
                         <Send className="w-4 h-4" />
-                      </div>
+                      </button>
                     </div>
                   </div>
                 )}
@@ -1029,87 +1590,212 @@ export default function App() {
 
             {/* Simulator Controls & Diagnostic Telemetry */}
             <div className="lg:col-span-6 space-y-6">
-              {/* SMART MULTI-LANGUAGE PACKS & RESOURCE MONITOR */}
+              {/* SMART MULTI-LANGUAGE PACKS & SETTINGS */}
               <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl p-5 shadow-xl relative overflow-hidden">
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-lg bg-emerald-600/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
                       <Languages className="w-4 h-4" />
                     </div>
                     <div>
                       <h3 className="font-bold text-sm text-white flex items-center gap-1.5">
-                        <span>Smart Multi-Language Packs</span>
+                        <span>Language Pair Settings</span>
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-semibold">
-                          Active: {activePacks.length}/3 Slots
+                          Active: {activePairs.length}/3 Slots
                         </span>
                       </h3>
-                      <p className="text-[11px] text-slate-400">Limit 3 simultaneous language pairs to ensure 0 battery drain and minimal RAM.</p>
+                      <p className="text-[11px] text-slate-400">Configure up to 3 language pairs for simultaneous on-device WhatsApp translation.</p>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <label className="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+                    {activePairs.length < 3 ? (
+                      <button
+                        onClick={() => setShowAddPairModal(true)}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow transition cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add Pair</span>
+                      </button>
+                    ) : (
+                      <span className="text-[10px] text-amber-400 font-semibold bg-amber-950/60 px-2 py-1 rounded-md border border-amber-800/80">
+                        Max 3 Slots Full
+                      </span>
+                    )}
+
+                    <label className="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer ml-1">
                       <input
                         type="checkbox"
                         checked={isAutoDetectPromptEnabled}
                         onChange={(e) => setIsAutoDetectPromptEnabled(e.target.checked)}
                         className="rounded accent-emerald-500 cursor-pointer"
                       />
-                      <span className="text-[11px] font-medium text-emerald-300">Auto-Detect</span>
+                      <span className="text-[11px] font-medium text-emerald-300">Live Auto-Detect</span>
                     </label>
                   </div>
                 </div>
 
-                {/* 3 Active Language Slots */}
+                {/* 3 Configurable Language Slots */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mb-4">
                   {[0, 1, 2].map((slotIdx) => {
-                    const packCode = activePacks[slotIdx];
-                    const packInfo = packCode ? multiLangChats[packCode as keyof typeof multiLangChats] : null;
+                    const pair = activePairs[slotIdx];
 
                     return (
                       <div
                         key={slotIdx}
-                        className={`p-3 rounded-xl border flex flex-col justify-between min-h-[90px] transition ${
-                          packInfo
+                        className={`p-3 rounded-xl border flex flex-col justify-between min-h-[96px] transition ${
+                          pair
                             ? 'bg-slate-950/80 border-emerald-600/40 shadow-sm'
-                            : 'bg-slate-950/30 border-dashed border-slate-800 text-slate-500'
+                            : 'bg-slate-950/30 border-dashed border-slate-700/80 hover:border-emerald-500/50'
                         }`}
                       >
-                        {packInfo ? (
+                        {pair ? (
                           <>
                             <div className="flex items-start justify-between">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-lg">{packInfo.flag}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xl">{pair.flag}</span>
                                 <div>
-                                  <div className="text-xs font-bold text-white leading-tight">{packInfo.label}</div>
-                                  <div className="text-[10px] text-emerald-400 font-medium">{packInfo.nativeName}</div>
+                                  <div className="text-xs font-bold text-white leading-tight">
+                                    {pair.label}
+                                  </div>
+                                  <div className="text-[10px] text-emerald-400 font-medium">
+                                    {pair.nativeName} → {pair.targetLabel}
+                                  </div>
                                 </div>
                               </div>
-                              {activePacks.length > 1 && (
+                              {activePairs.length > 1 && (
                                 <button
-                                  onClick={() => handleRemovePack(packCode)}
-                                  className="text-slate-500 hover:text-rose-400 text-xs px-1"
-                                  title="Delete model (~30MB) from device"
+                                  onClick={() => handleRemoveLanguagePair(pair.id)}
+                                  className="text-slate-500 hover:text-rose-400 text-xs px-1.5 py-0.5 rounded hover:bg-slate-800 transition cursor-pointer"
+                                  title={`Remove ${pair.label} pair (frees 30MB)`}
                                 >
-                                  ✕
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               )}
                             </div>
                             <div className="mt-2 pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[10px]">
-                              <span className="text-slate-400">Offline Model:</span>
-                              <span className="font-mono text-emerald-300 font-semibold">30 MB Ready</span>
+                              <span className="text-slate-400">Slot #{slotIdx + 1} Status:</span>
+                              <span className="font-mono text-emerald-300 font-semibold flex items-center gap-1">
+                                <Check className="w-2.5 h-2.5 text-emerald-400" /> 30 MB Ready
+                              </span>
                             </div>
                           </>
                         ) : (
-                          <div className="h-full flex flex-col items-center justify-center text-center py-2">
-                            <span className="text-[10px] font-medium text-slate-500 mb-1">Slot #{slotIdx + 1} (Available)</span>
-                            <span className="text-[9px] text-slate-600">Auto-installs when foreign chat is detected</span>
-                          </div>
+                          <button
+                            onClick={() => {
+                              // Select first available language not in active pairs
+                              const available = ALL_LANGUAGES.find(l => !activePairs.some(p => p.sourceCode === l.code));
+                              if (available) setManualAddSource(available.code);
+                              setShowAddPairModal(true);
+                            }}
+                            className="h-full w-full flex flex-col items-center justify-center text-center py-2 text-slate-400 hover:text-emerald-300 transition cursor-pointer group"
+                          >
+                            <div className="w-6 h-6 rounded-full bg-slate-800 group-hover:bg-emerald-950 group-hover:border group-hover:border-emerald-500/60 flex items-center justify-center text-slate-400 group-hover:text-emerald-400 mb-1 transition">
+                              <Plus className="w-3.5 h-3.5" />
+                            </div>
+                            <span className="text-[11px] font-bold text-slate-300 group-hover:text-emerald-300">
+                              + Add {slotIdx === 1 ? '2nd' : '3rd'} Language Pair
+                            </span>
+                            <span className="text-[9px] text-slate-500">Slot #{slotIdx + 1} Available</span>
+                          </button>
                         )}
                       </div>
                     );
                   })}
                 </div>
+
+                {/* MODAL: Add Language Pair Manually */}
+                {showAddPairModal && (
+                  <div className="mb-4 p-4 rounded-xl bg-slate-950 border border-emerald-500/60 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-800">
+                      <div className="flex items-center gap-2">
+                        <Plus className="w-4 h-4 text-emerald-400" />
+                        <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                          Add Language Pair (Slot #{activePairs.length + 1} of 3)
+                        </h4>
+                      </div>
+                      <button
+                        onClick={() => setShowAddPairModal(false)}
+                        className="text-slate-400 hover:text-white text-xs cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                          Translate Messages In (Source):
+                        </label>
+                        <select
+                          value={manualAddSource}
+                          onChange={(e) => setManualAddSource(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                        >
+                          {ALL_LANGUAGES.map((lang) => {
+                            const isAlreadyAdded = activePairs.some(p => p.sourceCode === lang.code);
+                            return (
+                              <option key={lang.code} value={lang.code} disabled={isAlreadyAdded}>
+                                {lang.flag} {lang.label} ({lang.nativeName}) {isAlreadyAdded ? '— Active' : ''}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                          Translate Into (Target):
+                        </label>
+                        <select
+                          value={manualAddTarget}
+                          onChange={(e) => setManualAddTarget(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                        >
+                          <option value="en">🇬🇧 English</option>
+                          <option value="es">🇪🇸 Spanish</option>
+                          <option value="fr">🇫🇷 French</option>
+                          <option value="de">🇩🇪 German</option>
+                          <option value="bn">🇧🇩 Bengali</option>
+                          <option value="hi">🇮🇳 Hindi</option>
+                          <option value="ar">🇸🇦 Arabic</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 pt-2">
+                      <span className="text-[10px] text-slate-400">
+                        Downloads on-device ML Kit model (~30MB) for 100% offline translation.
+                      </span>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setShowAddPairModal(false)}
+                          className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white text-xs cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => handleAddLanguagePairManually(manualAddSource, manualAddTarget)}
+                          disabled={!!downloadingPack}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow transition cursor-pointer disabled:opacity-50"
+                        >
+                          {downloadingPack ? (
+                            <>
+                              <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              <span>Downloading Model (~30MB)...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Save &amp; Download Model</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Resource Impact & Phone Health Meters */}
                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 text-xs space-y-2.5">

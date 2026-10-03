@@ -11,7 +11,8 @@ import java.util.regex.Pattern
 data class ScanResult(
     val messages: List<ScannedMessage>,
     val inputBarTop: Int?,
-    val detectedUninstalledLanguage: String? = null
+    val detectedUninstalledLanguage: String? = null,
+    val sampleUninstalledText: String? = null
 )
 
 /**
@@ -66,6 +67,7 @@ class WhatsAppMessageScanner(
         val results = mutableListOf<ScannedMessage>()
         var detectedInputBarTop: Int? = null
         var uninstalledLanguageDetected: String? = null
+        var sampleUninstalledText: String? = null
 
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(AccessibilityNodeInfo.obtain(root))
@@ -169,8 +171,9 @@ class WhatsAppMessageScanner(
                                         // 2. Check if candidate text is in an uninstalled language (smart auto-detect)
                                         if (uninstalledLanguageDetected == null) {
                                             val detectedCode = LanguageDetector.detectLanguage(candidateText)
-                                            if (detectedCode != null && !activeSourceLanguages.contains(detectedCode)) {
+                                            if (detectedCode != null && !activeSourceLanguages.contains(detectedCode) && detectedCode != "en") {
                                                 uninstalledLanguageDetected = detectedCode
+                                                sampleUninstalledText = candidateText
                                             }
                                         }
                                     }
@@ -197,7 +200,7 @@ class WhatsAppMessageScanner(
             }
         }
 
-        return ScanResult(results, detectedInputBarTop, uninstalledLanguageDetected)
+        return ScanResult(results, detectedInputBarTop, uninstalledLanguageDetected, sampleUninstalledText)
     }
 
     private fun isInsideQuotedMessage(node: AccessibilityNodeInfo): Boolean {
