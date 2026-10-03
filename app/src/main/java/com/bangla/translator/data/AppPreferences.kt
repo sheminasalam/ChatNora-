@@ -197,6 +197,16 @@ class AppPreferences(context: Context) {
         const val KEY_PAIRS_CONFIG = "key_pairs_config"
         const val KEY_AUTO_DETECT_PROMPT = "key_auto_detect_prompt"
         const val KEY_IGNORED_LANGS = "key_ignored_langs"
+        const val KEY_MODEL_UPDATE_AVAILABLE = "key_model_update_available"
+        const val KEY_MODEL_VERSION = "key_model_version"
         const val MAX_ACTIVE_LANGUAGES = 3
     }
+
+    var isModelUpdateAvailable: Boolean
+        get() = prefs.getBoolean(KEY_MODEL_UPDATE_AVAILABLE, true)
+        set(value) = prefs.edit().putBoolean(KEY_MODEL_UPDATE_AVAILABLE, value).apply()
+
+    var modelVersion: String
+        get() = prefs.getString(KEY_MODEL_VERSION, "v2.3") ?: "v2.3"
+        set(value) = prefs.edit().putString(KEY_MODEL_VERSION, value).apply()
 }

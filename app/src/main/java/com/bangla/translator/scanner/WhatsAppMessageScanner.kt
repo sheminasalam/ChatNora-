@@ -113,8 +113,16 @@ class WhatsAppMessageScanner(
                                     val normalized = candidateText.trim().replace(Regex("\\s+"), " ")
 
                                     // 1. Check if candidate belongs to any of the active languages
+                                    // Order French before Spanish to prevent Spanish from prematurely claiming French messages
                                     var matchedLang: String? = null
-                                    for (lang in activeSourceLanguages) {
+                                    val orderedLangs = activeSourceLanguages.sortedWith { a, b ->
+                                        when {
+                                            a == "fr" && b == "es" -> -1
+                                            a == "es" && b == "fr" -> 1
+                                            else -> 0
+                                        }
+                                    }
+                                    for (lang in orderedLangs) {
                                         if (LanguageDetector.isTargetLanguageMessage(candidateText, lang, ratioThreshold)) {
                                             matchedLang = lang
                                             break

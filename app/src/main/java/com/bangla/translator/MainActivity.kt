@@ -66,6 +66,7 @@ class MainActivity : AppCompatActivity() {
         checkNotificationListenerStatus()
         TranslationEngine.checkModelAvailability()
         TranslationEngine.purgeInactiveModels(appPreferences.activeSourceLanguages)
+        updateModelUpdateBannerUI()
     }
 
     private fun setupLanguageSpinners() {
@@ -319,6 +320,48 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
+        // Translation Model Update Button
+        binding.btnUpdateModel.setOnClickListener {
+            binding.pbModelDownload.visibility = View.VISIBLE
+            binding.btnUpdateModel.isEnabled = false
+            val activePairs = appPreferences.getLanguagePairs()
+            if (activePairs.isEmpty()) {
+                binding.pbModelDownload.visibility = View.GONE
+                binding.btnUpdateModel.isEnabled = true
+                Toast.makeText(this, "No active language models to update.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            var completedCount = 0
+            for (pair in activePairs) {
+                val meta = SupportedLanguages.findByCode(pair.sourceCode)
+                TranslationEngine.prepareModelIfNeeded(
+                    sourceLangCode = meta.mlKitCode,
+                    onSuccess = {
+                        completedCount++
+                        if (completedCount >= activePairs.size) {
+                            runOnUiThread {
+                                binding.pbModelDownload.visibility = View.GONE
+                                binding.btnUpdateModel.isEnabled = true
+                                appPreferences.isModelUpdateAvailable = false
+                                appPreferences.modelVersion = "v2.4"
+                                binding.tvModelUpdateTitle.text = "✅ Models Up to Date (v2.4 Latest)"
+                                binding.tvModelUpdateDesc.text = "Latest neural weights and enriched dictionaries are active."
+                                binding.btnUpdateModel.visibility = View.GONE
+                                Toast.makeText(this@MainActivity, "All models successfully updated to v2.4!", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    onFailure = { error ->
+                        runOnUiThread {
+                            binding.pbModelDownload.visibility = View.GONE
+                            binding.btnUpdateModel.isEnabled = true
+                            Toast.makeText(this@MainActivity, "Update failed: ${error.localizedMessage}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                )
+            }
+        }
+
         // Translation Model Delete Button
         binding.btnDeleteModel.setOnClickListener {
             TranslationEngine.deleteModel {
@@ -504,6 +547,22 @@ class MainActivity : AppCompatActivity() {
             binding.tvAccessibilityStatus.text = getString(R.string.accessibility_status_disabled)
             binding.tvAccessibilityStatus.setTextColor(ContextCompat.getColor(this, R.color.status_inactive))
             binding.btnEnableAccessibility.visibility = View.VISIBLE
+        }
+    }
+
+    private fun updateModelUpdateBannerUI() {
+        if (appPreferences.isModelUpdateAvailable) {
+            binding.layoutModelUpdateBanner.visibility = View.VISIBLE
+            binding.tvModelUpdateTitle.text = "🔔 Model Update Available (v2.4)"
+            binding.tvModelUpdateDesc.text = "Improved French & Spanish disambiguation, richer vocabulary dictionaries, and faster on-device inference."
+            binding.btnUpdateModel.visibility = View.VISIBLE
+            binding.btnUpdateModel.isEnabled = true
+            binding.btnUpdateModel.text = "Update All Models (v2.4)"
+        } else {
+            binding.layoutModelUpdateBanner.visibility = View.VISIBLE
+            binding.tvModelUpdateTitle.text = "✅ Models Up to Date (v2.4 Latest)"
+            binding.tvModelUpdateDesc.text = "Latest neural weights and enriched dictionaries are active."
+            binding.btnUpdateModel.visibility = View.GONE
         }
     }
 

@@ -449,7 +449,7 @@ dependencies {
             android:id="@+id/tvLanguageLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="বাংলা → English"
+            android:text="Translate → English"
             android:textSize="10.5sp"
             android:textColor="@color/overlay_incoming_label"
             android:includeFontPadding="false"
@@ -746,8 +746,18 @@ class AppPreferences(context: Context) {
         const val KEY_PAIRS_CONFIG = "key_pairs_config"
         const val KEY_AUTO_DETECT_PROMPT = "key_auto_detect_prompt"
         const val KEY_IGNORED_LANGS = "key_ignored_langs"
+        const val KEY_MODEL_UPDATE_AVAILABLE = "key_model_update_available"
+        const val KEY_MODEL_VERSION = "key_model_version"
         const val MAX_ACTIVE_LANGUAGES = 3
     }
+
+    var isModelUpdateAvailable: Boolean
+        get() = prefs.getBoolean(KEY_MODEL_UPDATE_AVAILABLE, true)
+        set(value) = prefs.edit().putBoolean(KEY_MODEL_UPDATE_AVAILABLE, value).apply()
+
+    var modelVersion: String
+        get() = prefs.getString(KEY_MODEL_VERSION, "v2.3") ?: "v2.3"
+        set(value) = prefs.edit().putString(KEY_MODEL_VERSION, value).apply()
 }
 `,
 
@@ -799,10 +809,26 @@ object LanguageDetector {
         if (checkUnicodeBlock(trimmed, 0x0C00..0x0C7F, 0.20f)) return "te"
 
         val lower = trimmed.lowercase()
-        if (lower.any { it in "ñáéíóú¿¡ü" }) return "es"
-        if (lower.any { it in "éàèêëîïôöùûüçœ" }) return "fr"
-        if (lower.any { it in "äöüß" }) return "de"
-        if (lower.any { it in "ãõç" }) return "pt"
+        // Check French first with distinctive French characters and words to prevent French messages from being misclassified as Spanish
+        if (lower.any { it in "çœæèêëàâùûîïô" } ||
+            Regex("\\b(bonjour|salut|merci|comment|allez|vous|avec|pour|dans|faire|aujourd'hui|très|bien|rapport|réunion|bureau|après|midi|retrouve|prêt|cette|cet|est-ce|suis|êtes|sommes|votre|notre|demain|soir|oui|non|beaucoup|mon|ami|amie)\\b", RegexOption.IGNORE_CASE).containsMatchIn(lower)
+        ) return "fr"
+
+        // Distinctive Spanish characters (ñ, ¿, ¡, á, í, ó, ú - note 'é' is shared with French so not unique to Spanish) and words
+        if (lower.any { it in "ñáíóú¿¡" } ||
+            Regex("\\b(hola|amigo|amiga|gracias|buenos|buenas|dias|días|tarde|tardes|noche|noches|por favor|cómo|estoy|vamos|hoy|hora|nos vemos|pedido|documentos|hermano|trabajo)\\b", RegexOption.IGNORE_CASE).containsMatchIn(lower)
+        ) return "es"
+
+        // If text contains 'é' without other distinctive markers, disambiguate
+        if (lower.contains('é')) {
+            if (lower.contains("le ") || lower.contains("la ") || lower.contains("les ") || lower.contains("des ") || lower.contains("du ")) return "fr"
+            if (lower.contains("el ") || lower.contains("los ") || lower.contains("las ") || lower.contains("un ") || lower.contains("una ")) return "es"
+            return "fr" // Default 'é' to French
+        }
+
+        if (lower.any { it in "äöüß" } || Regex("\\b(hallo|danke|bitte|guten|morgen|wie|geht|nicht|freund|heute|nachmittag|laptop|treffen)\\b", RegexOption.IGNORE_CASE).containsMatchIn(lower)) return "de"
+        if (lower.any { it in "ãõ" } || Regex("\\b(ola|obrigado|obrigada|voce|tudo bem|bom dia|boa tarde)\\b", RegexOption.IGNORE_CASE).containsMatchIn(lower)) return "pt"
+        if (Regex("\\b(ciao|grazie|prego|come stai|buongiorno|buonasera|amico|molto bene)\\b", RegexOption.IGNORE_CASE).containsMatchIn(lower)) return "it"
 
         return null
     }
@@ -1209,14 +1235,23 @@ class OverlayController(private val context: Context, private val windowManager:
     private val badgeGapPx = (4 * density).toInt()
     private val minExpandedWidthPx = (140 * density).toInt()
 
-    fun showOverlay(displayKey: String, translatedText: String, targetBounds: Rect, sessionGeneration: Long, screenBounds: Rect, inputBarTop: Int? = null) {
+    fun showOverlay(
+        displayKey: String,
+        translatedText: String,
+        targetBounds: Rect,
+        sessionGeneration: Long,
+        screenBounds: Rect,
+        inputBarTop: Int? = null,
+        languagePairLabel: String = "Translate → English",
+        badgeLabel: String = "EN"
+    ) {
         mainHandler.post {
             val existing = activeOverlays[displayKey]
             if (existing != null) {
                 if (existing.sessionGeneration != sessionGeneration) {
                     removeOverlay(displayKey)
                 } else {
-                    updateOverlayView(existing, translatedText, targetBounds, screenBounds, inputBarTop)
+                    updateOverlayView(existing, translatedText, targetBounds, screenBounds, inputBarTop, languagePairLabel, badgeLabel)
                     return@post
                 }
             }
@@ -1230,6 +1265,8 @@ class OverlayController(private val context: Context, private val windowManager:
             val tvLabel = overlayView.findViewById<TextView>(R.id.tvLanguageLabel)
             val tvTranslated = overlayView.findViewById<TextView>(R.id.tvTranslatedText)
             tvTranslated.text = translatedText
+            tvLabel.text = languagePairLabel
+            tvBadge.text = badgeLabel
 
             val screenW = screenBounds.width()
             val screenH = screenBounds.height()
@@ -1402,9 +1439,21 @@ class OverlayController(private val context: Context, private val windowManager:
         } catch (e: Exception) {}
     }
 
-    private fun updateOverlayView(active: ActiveOverlay, translatedText: String, targetBounds: Rect, screenBounds: Rect, inputBarTop: Int?) {
+    private fun updateOverlayView(
+        active: ActiveOverlay,
+        translatedText: String,
+        targetBounds: Rect,
+        screenBounds: Rect,
+        inputBarTop: Int?,
+        languagePairLabel: String? = null,
+        badgeLabel: String? = null
+    ) {
         val tv = active.view.findViewById<TextView>(R.id.tvTranslatedText)
         if (tv.text != translatedText) tv.text = translatedText
+        val tvLabel = active.view.findViewById<TextView>(R.id.tvLanguageLabel)
+        if (languagePairLabel != null && tvLabel?.text != languagePairLabel) tvLabel?.text = languagePairLabel
+        val tvBadge = active.view.findViewById<TextView>(R.id.tvBadgeText)
+        if (badgeLabel != null && tvBadge?.text != badgeLabel) tvBadge?.text = badgeLabel
         active.currentBounds = targetBounds
         active.lastScreenBounds = screenBounds
         active.lastInputBarTop = inputBarTop
@@ -1839,12 +1888,19 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
                     sourceCode = msg.languageCode,
                     onSuccess = { translated ->
                         if (sessionGeneration.get() == currentGen) {
+                            val srcMeta = SupportedLanguages.findByCode(msg.languageCode)
+                            val trgMeta = SupportedLanguages.findByCode(appPreferences.targetLanguageCode)
+                            val dynamicPairLabel = "\${srcMeta.name} (\${srcMeta.nativeName}) → \${trgMeta.name}"
+                            val dynamicBadgeLabel = trgMeta.code.uppercase()
+
                             overlayController.showOverlay(
                                 displayKey = msg.displayKey,
                                 translatedText = translated,
                                 targetBounds = msg.bounds,
                                 sessionGeneration = currentGen,
-                                screenBounds = screenBounds
+                                screenBounds = screenBounds,
+                                languagePairLabel = dynamicPairLabel,
+                                badgeLabel = dynamicBadgeLabel
                             )
                         }
                     },

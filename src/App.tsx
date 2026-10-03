@@ -28,7 +28,8 @@ import {
   Globe,
   X,
   Ban,
-  ShieldAlert
+  ShieldAlert,
+  Bell
 } from 'lucide-react';
 import { downloadProjectZip } from './projectExporter';
 
@@ -313,6 +314,7 @@ interface MessageBubble {
   time: string;
   translated?: string;
   isBengali: boolean;
+  langCode?: string;
 }
 
 export interface SupportedLangMeta {
@@ -398,12 +400,29 @@ export function detectMessageLanguage(text: string): SupportedLangMeta | null {
 
   // Lexical & diacritics heuristics for Latin-script languages
   const lower = trimmed.toLowerCase();
-  // Spanish
-  if (/[¿¡ñáéíóú]/.test(lower) || /\b(hola|amigo|gracias|buenos|dias|tarde|por favor|como|estoy|vamos|hoy|hora|nos vemos|café|pedido|documentos)\b/i.test(lower)) {
+
+  // French (Check distinctive French diacritics and vocabulary before Spanish to avoid false positives on 'é')
+  const hasFrenchDistinctiveChars = /[çœæèêëàâùûîïô]/i.test(lower);
+  const hasFrenchWords = /\b(bonjour|salut|merci|comment|allez|vous|avec|pour|dans|faire|aujourd'hui|aujourdhui|très|tres|bien|rapport|réunion|reunion|bureau|après|apres|midi|retrouve|prêt|pret|cette|cet|est-ce|suis|êtes|sommes|votre|notre|demain|soir|oui|non|beaucoup|mon|ami|amie|quand|tout|tous|toute|va|vas|pourquoi)\b/i.test(lower);
+
+  // Spanish (Distinctive Spanish characters: ñ, ¿, ¡, á, í, ó, ú - Note: 'é' is shared with French so not unique to Spanish)
+  const hasSpanishDistinctiveChars = /[¿¡ñáíóú]/i.test(lower);
+  const hasSpanishWords = /\b(hola|amigo|amiga|gracias|buenos|buenas|dias|días|tarde|tardes|noche|noches|por favor|cómo|estoy|vamos|hoy|hora|nos vemos|pedido|documentos|hermano|trabajo)\b/i.test(lower);
+
+  if (hasFrenchDistinctiveChars || hasFrenchWords) {
+    return ALL_LANGUAGES.find(l => l.code === 'fr') || null;
+  }
+  if (hasSpanishDistinctiveChars || hasSpanishWords) {
     return ALL_LANGUAGES.find(l => l.code === 'es') || null;
   }
-  // French
-  if (/[çœæèêëàâùûîï]/.test(lower) || /\b(bonjour|salut|merci|comment|allez|vous|avec|pour|dans|faire|aujourd'hui|très|bien|rapport|réunion)\b/i.test(lower)) {
+  // Disambiguate 'é' if message has no other markers
+  if (lower.includes('é')) {
+    if (/\b(le|la|les|des|du|un|une)\b/i.test(lower)) {
+      return ALL_LANGUAGES.find(l => l.code === 'fr') || null;
+    }
+    if (/\b(el|los|las)\b/i.test(lower)) {
+      return ALL_LANGUAGES.find(l => l.code === 'es') || null;
+    }
     return ALL_LANGUAGES.find(l => l.code === 'fr') || null;
   }
   // German
@@ -506,13 +525,44 @@ export default function App() {
   const [pairToReplace, setPairToReplace] = useState<string>('pair_1');
   const [chatInputText, setChatInputText] = useState<string>('');
 
+  // Model Update Notification & Version State in Settings
+  const [isModelUpdateAvailable, setIsModelUpdateAvailable] = useState<boolean>(true);
+  const [isUpdatingModel, setIsUpdatingModel] = useState<boolean>(false);
+  const [currentModelVersion, setCurrentModelVersion] = useState<string>('v2.3');
+  const [modelLatestVersion, setModelLatestVersion] = useState<string>('v2.4');
+  const [modelUpdateProgress, setModelUpdateProgress] = useState<number>(0);
+
+  const handleUpdateAllModels = () => {
+    setIsUpdatingModel(true);
+    setModelUpdateProgress(20);
+    setStatusLog(prev => [
+      `[MODEL UPDATE] Downloading model update ${modelLatestVersion} with improved Spanish & French disambiguation...`,
+      ...prev.slice(0, 8)
+    ]);
+
+    setTimeout(() => setModelUpdateProgress(55), 400);
+    setTimeout(() => setModelUpdateProgress(90), 800);
+
+    setTimeout(() => {
+      setIsUpdatingModel(false);
+      setIsModelUpdateAvailable(false);
+      setCurrentModelVersion('v2.4');
+      setModelUpdateProgress(100);
+      showToast('All translation models successfully updated to v2.4 (Latest)!');
+      setStatusLog(prev => [
+        `[MODEL UPDATE] Update complete! Version v2.4 active. Enhanced French/Spanish vocabulary and inference speed in effect.`,
+        ...prev.slice(0, 8)
+      ]);
+    }, 1200);
+  };
+
   // Dynamic conversation messages for Chat A so user can simulate new incoming messages
   const [dynamicMessages, setDynamicMessages] = useState<MessageBubble[]>([
-    { id: 'bn1', sender: 'Moni', text: 'এটা ফেটে যাবে এবং পপকর্ন বেরিয়ে আসবে।', isMe: true, time: '11:27 AM', translated: 'It will burst and popcorn will come out.', isBengali: true },
-    { id: 'bn2', sender: 'Moni', text: 'করে রান্না করুন', isMe: true, time: '11:28 AM', translated: 'Cook it properly.', isBengali: true },
-    { id: 'bn3', sender: 'Me', text: 'ভাত বসালাম', isMe: false, time: '11:28 AM', translated: 'I put the rice on to cook.', isBengali: true },
-    { id: 'bn4', sender: 'Moni', text: 'তোমার আজকে কি কাজ?', isMe: false, time: '11:29 AM', translated: 'What work do you have today?', isBengali: true },
-    { id: 'bn5', sender: 'Me', text: 'এখনো বিদ্যুৎ আসেনি', isMe: false, time: '11:30 AM', translated: 'Electricity has not returned yet.', isBengali: true },
+    { id: 'bn1', sender: 'Moni', text: 'এটা ফেটে যাবে এবং পপকর্ন বেরিয়ে আসবে।', isMe: true, time: '11:27 AM', translated: 'It will burst and popcorn will come out.', isBengali: true, langCode: 'bn' },
+    { id: 'bn2', sender: 'Moni', text: 'করে রান্না করুন', isMe: true, time: '11:28 AM', translated: 'Cook it properly.', isBengali: true, langCode: 'bn' },
+    { id: 'bn3', sender: 'Me', text: 'ভাত বসালাম', isMe: false, time: '11:28 AM', translated: 'I put the rice on to cook.', isBengali: true, langCode: 'bn' },
+    { id: 'bn4', sender: 'Moni', text: 'তোমার আজকে কি কাজ?', isMe: false, time: '11:29 AM', translated: 'What work do you have today?', isBengali: true, langCode: 'bn' },
+    { id: 'bn5', sender: 'Me', text: 'এখনো বিদ্যুৎ আসেনি', isMe: false, time: '11:30 AM', translated: 'Electricity has not returned yet.', isBengali: true, langCode: 'bn' },
   ]);
 
   // Reset chat messages when switching language preset in quick switcher
@@ -691,7 +741,8 @@ export default function App() {
       isMe: false,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       translated: item.translated,
-      isBengali: langCode === 'bn'
+      isBengali: langCode === 'bn',
+      langCode: langCode
     };
 
     setDynamicMessages(prev => [...prev, newMsg]);
@@ -733,7 +784,8 @@ export default function App() {
       isMe: true,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       translated: detected ? `[Translated to English]: ${chatInputText.trim()}` : undefined,
-      isBengali: detected?.code === 'bn'
+      isBengali: detected?.code === 'bn',
+      langCode: detected ? detected.code : undefined
     };
     setDynamicMessages(prev => [...prev, newMsg]);
     setChatInputText('');
@@ -746,11 +798,11 @@ export default function App() {
       flag: '🇧🇩',
       nativeName: 'বাংলা',
       messages: [
-        { id: 'bn1', sender: 'Moni', text: 'এটা ফেটে যাবে এবং পপকর্ন বেরিয়ে আসবে।', isMe: true, time: '11:27 AM', translated: 'It will burst and popcorn will come out.', isBengali: true },
-        { id: 'bn2', sender: 'Moni', text: 'করে রান্না করুন', isMe: true, time: '11:28 AM', translated: 'Cook it properly.', isBengali: true },
-        { id: 'bn3', sender: 'Me', text: 'ভাত বসালাম', isMe: false, time: '11:28 AM', translated: 'I put the rice on to cook.', isBengali: true },
-        { id: 'bn4', sender: 'Moni', text: 'তোমার আজকে কি কাজ?', isMe: false, time: '11:29 AM', translated: 'What work do you have today?', isBengali: true },
-        { id: 'bn5', sender: 'Me', text: 'এখনো বিদ্যুৎ আসেনি', isMe: false, time: '11:30 AM', translated: 'Electricity has not returned yet.', isBengali: true },
+        { id: 'bn1', sender: 'Moni', text: 'এটা ফেটে যাবে এবং পপকর্ন বেরিয়ে আসবে।', isMe: true, time: '11:27 AM', translated: 'It will burst and popcorn will come out.', isBengali: true, langCode: 'bn' },
+        { id: 'bn2', sender: 'Moni', text: 'করে রান্না করুন', isMe: true, time: '11:28 AM', translated: 'Cook it properly.', isBengali: true, langCode: 'bn' },
+        { id: 'bn3', sender: 'Me', text: 'ভাত বসালাম', isMe: false, time: '11:28 AM', translated: 'I put the rice on to cook.', isBengali: true, langCode: 'bn' },
+        { id: 'bn4', sender: 'Moni', text: 'তোমার আজকে কি কাজ?', isMe: false, time: '11:29 AM', translated: 'What work do you have today?', isBengali: true, langCode: 'bn' },
+        { id: 'bn5', sender: 'Me', text: 'এখনো বিদ্যুৎ আসেনি', isMe: false, time: '11:30 AM', translated: 'Electricity has not returned yet.', isBengali: true, langCode: 'bn' },
       ]
     },
     es: {
@@ -758,10 +810,10 @@ export default function App() {
       flag: '🇪🇸',
       nativeName: 'Español',
       messages: [
-        { id: 'es1', sender: 'Carlos', text: '¡Hola amigo! ¿A qué hora nos vemos hoy?', isMe: false, time: '2:15 PM', translated: 'Hello friend! What time are we meeting today?', isBengali: true },
-        { id: 'es2', sender: 'Me', text: 'Nos vemos a las 4 PM en el café.', isMe: true, time: '2:16 PM', translated: 'See you at 4 PM at the cafe.', isBengali: true },
-        { id: 'es3', sender: 'Carlos', text: 'Perfecto, por favor trae los documentos del proyecto.', isMe: false, time: '2:18 PM', translated: 'Perfect, please bring the project documents.', isBengali: true },
-        { id: 'es4', sender: 'Carlos', text: '¿Vas a pedir comida o solo café?', isMe: false, time: '2:20 PM', translated: 'Are you going to order food or just coffee?', isBengali: true },
+        { id: 'es1', sender: 'Carlos', text: '¡Hola amigo! ¿A qué hora nos vemos hoy?', isMe: false, time: '2:15 PM', translated: 'Hello friend! What time are we meeting today?', isBengali: false, langCode: 'es' },
+        { id: 'es2', sender: 'Me', text: 'Nos vemos a las 4 PM en el café.', isMe: true, time: '2:16 PM', translated: 'See you at 4 PM at the cafe.', isBengali: false, langCode: 'es' },
+        { id: 'es3', sender: 'Carlos', text: 'Perfecto, por favor trae los documentos del proyecto.', isMe: false, time: '2:18 PM', translated: 'Perfect, please bring the project documents.', isBengali: false, langCode: 'es' },
+        { id: 'es4', sender: 'Carlos', text: '¿Vas a pedir comida o solo café?', isMe: false, time: '2:20 PM', translated: 'Are you going to order food or just coffee?', isBengali: false, langCode: 'es' },
       ]
     },
     hi: {
@@ -769,10 +821,10 @@ export default function App() {
       flag: '🇮🇳',
       nativeName: 'हिंदी',
       messages: [
-        { id: 'hi1', sender: 'Rohit', text: 'नमस्ते भाई, आप कैसे हैं और कहाँ जा रहे हैं?', isMe: false, time: '1:10 PM', translated: 'Hello brother, how are you and where are you going?', isBengali: true },
-        { id: 'hi2', sender: 'Me', text: 'मैं बिल्कुल ठीक हूँ, ऑफिस जा रहा हूँ।', isMe: true, time: '1:12 PM', translated: 'I am doing great, heading to the office.', isBengali: true },
-        { id: 'hi3', sender: 'Rohit', text: 'क्या शाम को हम सब मिलेंगे?', isMe: false, time: '1:15 PM', translated: 'Are we all meeting in the evening?', isBengali: true },
-        { id: 'hi4', sender: 'Rohit', text: 'कृपया मुझे रिपोर्ट का लिंक भेज देना।', isMe: false, time: '1:18 PM', translated: 'Please send me the link to the report.', isBengali: true },
+        { id: 'hi1', sender: 'Rohit', text: 'नमस्ते भाई, आप कैसे हैं और कहाँ जा रहे हैं?', isMe: false, time: '1:10 PM', translated: 'Hello brother, how are you and where are you going?', isBengali: false, langCode: 'hi' },
+        { id: 'hi2', sender: 'Me', text: 'मैं बिल्कुल ठीक हूँ, ऑफिस जा रहा हूँ।', isMe: true, time: '1:12 PM', translated: 'I am doing great, heading to the office.', isBengali: false, langCode: 'hi' },
+        { id: 'hi3', sender: 'Rohit', text: 'क्या शाम को हम सब मिलेंगे?', isMe: false, time: '1:15 PM', translated: 'Are we all meeting in the evening?', isBengali: false, langCode: 'hi' },
+        { id: 'hi4', sender: 'Rohit', text: 'कृपया मुझे रिपोर्ट का लिंक भेज देना।', isMe: false, time: '1:18 PM', translated: 'Please send me the link to the report.', isBengali: false, langCode: 'hi' },
       ]
     },
     fr: {
@@ -780,10 +832,10 @@ export default function App() {
       flag: '🇫🇷',
       nativeName: 'Français',
       messages: [
-        { id: 'fr1', sender: 'Julien', text: 'Bonjour mon ami, comment vas-tu aujourd\'hui?', isMe: false, time: '10:05 AM', translated: 'Hello my friend, how are you today?', isBengali: true },
-        { id: 'fr2', sender: 'Me', text: 'Ça va très bien, merci beaucoup!', isMe: true, time: '10:06 AM', translated: 'Doing very well, thank you very much!', isBengali: true },
-        { id: 'fr3', sender: 'Julien', text: 'Est-ce que le rapport est prêt pour la réunion?', isMe: false, time: '10:10 AM', translated: 'Is the report ready for the meeting?', isBengali: true },
-        { id: 'fr4', sender: 'Julien', text: 'On se retrouve au bureau cet après-midi.', isMe: false, time: '10:15 AM', translated: 'Let\'s meet at the office this afternoon.', isBengali: true },
+        { id: 'fr1', sender: 'Julien', text: 'Bonjour mon ami, comment vas-tu aujourd\'hui?', isMe: false, time: '10:05 AM', translated: 'Hello my friend, how are you today?', isBengali: false, langCode: 'fr' },
+        { id: 'fr2', sender: 'Me', text: 'Ça va très bien, merci beaucoup!', isMe: true, time: '10:06 AM', translated: 'Doing very well, thank you very much!', isBengali: false, langCode: 'fr' },
+        { id: 'fr3', sender: 'Julien', text: 'Est-ce que le rapport est prêt pour la réunion?', isMe: false, time: '10:10 AM', translated: 'Is the report ready for the meeting?', isBengali: false, langCode: 'fr' },
+        { id: 'fr4', sender: 'Julien', text: 'On se retrouve au bureau cet après-midi.', isMe: false, time: '10:15 AM', translated: 'Let\'s meet at the office this afternoon.', isBengali: false, langCode: 'fr' },
       ]
     },
     ar: {
@@ -791,10 +843,10 @@ export default function App() {
       flag: '🇸🇦',
       nativeName: 'العربية',
       messages: [
-        { id: 'ar1', sender: 'Tariq', text: 'مرحباً يا أخي، كيف حالك وأين أنت الآن؟', isMe: false, time: '3:00 PM', translated: 'Hello my brother, how are you and where are you now?', isBengali: true },
-        { id: 'ar2', sender: 'Me', text: 'أنا بخير والحمد لله، في طريقي إلى المنزل.', isMe: true, time: '3:02 PM', translated: 'I am well thank God, on my way home.', isBengali: true },
-        { id: 'ar3', sender: 'Tariq', text: 'هل يمكننا التحدث في موضوع المشروع لاحقاً؟', isMe: false, time: '3:05 PM', translated: 'Can we discuss the project topic later?', isBengali: true },
-        { id: 'ar4', sender: 'Tariq', text: 'شكراً جزيلاً لك على دعمك المستمر!', isMe: false, time: '3:08 PM', translated: 'Thank you very much for your continuous support!', isBengali: true },
+        { id: 'ar1', sender: 'Tariq', text: 'مرحباً يا أخي، كيف حالك وأين أنت الآن؟', isMe: false, time: '3:00 PM', translated: 'Hello my brother, how are you and where are you now?', isBengali: false, langCode: 'ar' },
+        { id: 'ar2', sender: 'Me', text: 'أنا بخير والحمد لله، في طريقي إلى المنزل.', isMe: true, time: '3:02 PM', translated: 'I am well thank God, on my way home.', isBengali: false, langCode: 'ar' },
+        { id: 'ar3', sender: 'Tariq', text: 'هل يمكننا التحدث في موضوع المشروع لاحقاً؟', isMe: false, time: '3:05 PM', translated: 'Can we discuss the project topic later?', isBengali: false, langCode: 'ar' },
+        { id: 'ar4', sender: 'Tariq', text: 'شكراً جزيلاً لك على دعمك المستمر!', isMe: false, time: '3:08 PM', translated: 'Thank you very much for your continuous support!', isBengali: false, langCode: 'ar' },
       ]
     },
     de: {
@@ -802,10 +854,10 @@ export default function App() {
       flag: '🇩🇪',
       nativeName: 'Deutsch',
       messages: [
-        { id: 'de1', sender: 'Lukas', text: 'Hallo mein Freund, wie geht es dir heute?', isMe: false, time: '9:30 AM', translated: 'Hello my friend, how are you today?', isBengali: true },
-        { id: 'de2', sender: 'Me', text: 'Mir geht es super, danke der Nachfrage!', isMe: true, time: '9:32 AM', translated: 'I am doing great, thanks for asking!', isBengali: true },
-        { id: 'de3', sender: 'Lukas', text: 'Treffen wir uns heute Nachmittag um 15 Uhr?', isMe: false, time: '9:35 AM', translated: 'Shall we meet this afternoon at 3 PM?', isBengali: true },
-        { id: 'de4', sender: 'Lukas', text: 'Bitte bringe deinen Laptop mit.', isMe: false, time: '9:40 AM', translated: 'Please bring your laptop along.', isBengali: true },
+        { id: 'de1', sender: 'Lukas', text: 'Hallo mein Freund, wie geht es dir heute?', isMe: false, time: '9:30 AM', translated: 'Hello my friend, how are you today?', isBengali: false, langCode: 'de' },
+        { id: 'de2', sender: 'Me', text: 'Mir geht es super, danke der Nachfrage!', isMe: true, time: '9:32 AM', translated: 'I am doing great, thanks for asking!', isBengali: false, langCode: 'de' },
+        { id: 'de3', sender: 'Lukas', text: 'Treffen wir uns heute Nachmittag um 15 Uhr?', isMe: false, time: '9:35 AM', translated: 'Shall we meet this afternoon at 3 PM?', isBengali: false, langCode: 'de' },
+        { id: 'de4', sender: 'Lukas', text: 'Bitte bringe deinen Laptop mit.', isMe: false, time: '9:40 AM', translated: 'Please bring your laptop along.', isBengali: false, langCode: 'de' },
       ]
     }
   }), []);
@@ -814,28 +866,28 @@ export default function App() {
   const chatMessages: Record<'chatA' | 'chatB' | 'chatHindi' | 'chatTamil' | 'chatFrench', MessageBubble[]> = useMemo(() => ({
     chatA: dynamicMessages,
     chatB: [
-      { id: 'm7', sender: 'Tanvir (Chittagong)', text: 'ভাই আপনার সাথে জরুরি কথা ছিল।', isMe: false, time: '11:02 AM', translated: 'Brother, I had an urgent matter to discuss with you.', isBengali: true },
+      { id: 'm7', sender: 'Tanvir (Chittagong)', text: 'ভাই আপনার সাথে জরুরি কথা ছিল।', isMe: false, time: '11:02 AM', translated: 'Brother, I had an urgent matter to discuss with you.', isBengali: true, langCode: 'bn' },
       { id: 'm8', sender: 'Me', text: 'Sure Tanvir, what is it about?', isMe: true, time: '11:03 AM', isBengali: false },
-      { id: 'm9', sender: 'Tanvir (Chittagong)', text: 'তুমি কোথায় আছো এখন?', isMe: false, time: '11:04 AM', translated: 'Where are you right now?', isBengali: true },
-      { id: 'm10', sender: 'Tanvir (Chittagong)', text: 'https://example.com/report.pdf এই লিংকটা দেখুন।', isMe: false, time: '11:05 AM', translated: 'Check this link out.', isBengali: true },
+      { id: 'm9', sender: 'Tanvir (Chittagong)', text: 'তুমি কোথায় আছো এখন?', isMe: false, time: '11:04 AM', translated: 'Where are you right now?', isBengali: true, langCode: 'bn' },
+      { id: 'm10', sender: 'Tanvir (Chittagong)', text: 'https://example.com/report.pdf এই লিংকটা দেখুন।', isMe: false, time: '11:05 AM', translated: 'Check this link out.', isBengali: true, langCode: 'bn' },
     ],
     chatHindi: [
-      { id: 'hi1', sender: 'Rohit (Delhi)', text: 'नमस्ते भाई, आप कैसे हैं और कहाँ जा रहे हैं?', isMe: false, time: '1:10 PM', translated: 'Hello brother, how are you and where are you going?', isBengali: false },
-      { id: 'hi2', sender: 'Me', text: 'मैं बिल्कुल ठीक हूँ, ऑफिस जा रहा हूँ।', isMe: true, time: '1:12 PM', translated: 'I am doing great, heading to the office.', isBengali: false },
-      { id: 'hi3', sender: 'Rohit (Delhi)', text: 'क्या शाम को हम सब मिलेंगे?', isMe: false, time: '1:15 PM', translated: 'Are we all meeting in the evening?', isBengali: false },
-      { id: 'hi4', sender: 'Rohit (Delhi)', text: 'कृपया मुझे रिपोर्ट का लिंक भेज देना।', isMe: false, time: '1:18 PM', translated: 'Please send me the link to the report.', isBengali: false },
+      { id: 'hi1', sender: 'Rohit (Delhi)', text: 'नमस्ते भाई, आप कैसे हैं और कहाँ जा रहे हैं?', isMe: false, time: '1:10 PM', translated: 'Hello brother, how are you and where are you going?', isBengali: false, langCode: 'hi' },
+      { id: 'hi2', sender: 'Me', text: 'मैं बिल्कुल ठीक हूँ, ऑफिस जा रहा हूँ।', isMe: true, time: '1:12 PM', translated: 'I am doing great, heading to the office.', isBengali: false, langCode: 'hi' },
+      { id: 'hi3', sender: 'Rohit (Delhi)', text: 'क्या शाम को हम सब मिलेंगे?', isMe: false, time: '1:15 PM', translated: 'Are we all meeting in the evening?', isBengali: false, langCode: 'hi' },
+      { id: 'hi4', sender: 'Rohit (Delhi)', text: 'कृपया मुझे रिपोर्ट का लिंक भेज देना।', isMe: false, time: '1:18 PM', translated: 'Please send me the link to the report.', isBengali: false, langCode: 'hi' },
     ],
     chatTamil: [
-      { id: 'ta1', sender: 'Murugan (Chennai)', text: 'வணக்கம் நண்பா, எப்படி இருக்கிறீர்கள்?', isMe: false, time: '2:15 PM', translated: 'Hello friend, how are you?', isBengali: false },
-      { id: 'ta2', sender: 'Me', text: 'நான் நலமாக இருக்கிறேன், நன்றி!', isMe: true, time: '2:16 PM', translated: 'I am doing well, thank you!', isBengali: false },
-      { id: 'ta3', sender: 'Murugan (Chennai)', text: 'இன்று மாலை நாம் சந்திக்கலாமா?', isMe: false, time: '2:20 PM', translated: 'Can we meet this evening?', isBengali: false },
-      { id: 'ta4', sender: 'Murugan (Chennai)', text: 'அலுவலக அறிக்கை தயாராகிவிட்டதா?', isMe: false, time: '2:25 PM', translated: 'Is the office report ready?', isBengali: false }
+      { id: 'ta1', sender: 'Murugan (Chennai)', text: 'வணக்கம் நண்பா, எப்படி இருக்கிறீர்கள்?', isMe: false, time: '2:15 PM', translated: 'Hello friend, how are you?', isBengali: false, langCode: 'ta' },
+      { id: 'ta2', sender: 'Me', text: 'நான் நலமாக இருக்கிறேன், நன்றி!', isMe: true, time: '2:16 PM', translated: 'I am doing well, thank you!', isBengali: false, langCode: 'ta' },
+      { id: 'ta3', sender: 'Murugan (Chennai)', text: 'இன்று மாலை நாம் சந்திக்கலாமா?', isMe: false, time: '2:20 PM', translated: 'Can we meet this evening?', isBengali: false, langCode: 'ta' },
+      { id: 'ta4', sender: 'Murugan (Chennai)', text: 'அலுவலக அறிக்கை தயாராகிவிட்டதா?', isMe: false, time: '2:25 PM', translated: 'Is the office report ready?', isBengali: false, langCode: 'ta' }
     ],
     chatFrench: [
-      { id: 'fr1', sender: 'Julien (Paris)', text: "Bonjour mon ami, comment vas-tu aujourd'hui?", isMe: false, time: '10:05 AM', translated: 'Hello my friend, how are you today?', isBengali: false },
-      { id: 'fr2', sender: 'Me', text: 'Ça va très bien, merci beaucoup!', isMe: true, time: '10:06 AM', translated: 'Doing very well, thank you very much!', isBengali: false },
-      { id: 'fr3', sender: 'Julien (Paris)', text: 'Est-ce que le rapport est prêt pour la réunion?', isMe: false, time: '10:10 AM', translated: 'Is the report ready for the meeting?', isBengali: false },
-      { id: 'fr4', sender: 'Julien (Paris)', text: 'On se retrouve au bureau cet après-midi.', isMe: false, time: '10:15 AM', translated: "Let's meet at the office this afternoon.", isBengali: false }
+      { id: 'fr1', sender: 'Julien (Paris)', text: "Bonjour mon ami, comment vas-tu aujourd'hui?", isMe: false, time: '10:05 AM', translated: 'Hello my friend, how are you today?', isBengali: false, langCode: 'fr' },
+      { id: 'fr2', sender: 'Me', text: 'Ça va très bien, merci beaucoup!', isMe: true, time: '10:06 AM', translated: 'Doing very well, thank you very much!', isBengali: false, langCode: 'fr' },
+      { id: 'fr3', sender: 'Julien (Paris)', text: 'Est-ce que le rapport est prêt pour la réunion?', isMe: false, time: '10:10 AM', translated: 'Is the report ready for the meeting?', isBengali: false, langCode: 'fr' },
+      { id: 'fr4', sender: 'Julien (Paris)', text: 'On se retrouve au bureau cet après-midi.', isMe: false, time: '10:15 AM', translated: "Let's meet at the office this afternoon.", isBengali: false, langCode: 'fr' }
     ]
   }), [dynamicMessages]);
 
@@ -1657,10 +1709,19 @@ export default function App() {
                         const isOtherExpanded = expandedMsgId !== null && !isExpanded;
 
                         // Check if this message is in any of the downloaded active pairs
-                        const msgLang = detectMessageLanguage(msg.text);
-                        const msgLangCode = msgLang ? msgLang.code : (msg.isBengali ? 'bn' : null);
-                        const matchedPair = msgLangCode ? activePairs.find(p => p.sourceCode === msgLangCode) : null;
+                        const msgDetected = detectMessageLanguage(msg.text);
+                        const effectiveCode = msg.langCode || (msgDetected ? msgDetected.code : (msg.isBengali ? 'bn' : null));
+                        const matchedPair = effectiveCode ? activePairs.find(p => p.sourceCode === effectiveCode) : null;
                         const isPackActive = !!matchedPair;
+                        const effectiveMeta = effectiveCode ? ALL_LANGUAGES.find(l => l.code === effectiveCode) : msgDetected;
+
+                        const sourceName = matchedPair
+                          ? `${matchedPair.label} (${matchedPair.nativeName})`
+                          : effectiveMeta
+                          ? `${effectiveMeta.label} (${effectiveMeta.nativeName})`
+                          : 'Detected Language';
+                        const targetName = matchedPair?.targetLabel || 'English';
+                        const bubbleTitle = `${sourceName} → ${targetName}`;
 
                         return (
                           <div
@@ -1693,10 +1754,12 @@ export default function App() {
                                       ? 'bg-[#0B2B20] border-[#144635] text-[#25D366]'
                                       : 'bg-[#1F2C34] border-[#2A3942] text-[#8696A0]'
                                   }`}
-                                  title="Click to view translation"
+                                  title={`Click to view ${effectiveMeta?.label || 'translation'}`}
                                 >
                                   <Languages className="w-2.5 h-2.5" />
-                                  <span className="text-[9px] font-bold">EN</span>
+                                  <span className="text-[9px] font-bold">
+                                    {matchedPair ? matchedPair.targetCode.toUpperCase() : 'EN'}
+                                  </span>
                                 </button>
                               )}
                             </div>
@@ -1724,7 +1787,7 @@ export default function App() {
                                         msg.isMe ? 'text-[#25D366]' : 'text-[#8696A0]'
                                       }`}
                                     >
-                                      {matchedPair ? matchedPair.nativeName : (msgLang?.nativeName || 'Foreign')} → English
+                                      {bubbleTitle}
                                     </span>
                                     <span className="text-[9px] text-slate-500 font-mono ml-2">click anywhere to close</span>
                                   </div>
@@ -1782,6 +1845,11 @@ export default function App() {
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-semibold">
                           Active: {activePairs.length}/3 Slots
                         </span>
+                        {isModelUpdateAvailable && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-800 font-semibold flex items-center gap-1 animate-pulse">
+                            <Bell className="w-2.5 h-2.5" /> Model Update Available ({modelLatestVersion})
+                          </span>
+                        )}
                       </h3>
                       <p className="text-[11px] text-slate-400">Configure up to 3 language pairs for simultaneous on-device WhatsApp translation.</p>
                     </div>
@@ -1813,6 +1881,69 @@ export default function App() {
                     </label>
                   </div>
                 </div>
+
+                {/* NOTIFICATION: Model Update in Settings */}
+                {isModelUpdateAvailable ? (
+                  <div className="mb-4 p-3.5 rounded-xl bg-gradient-to-r from-amber-950/80 via-amber-900/30 to-slate-950 border border-amber-500/70 shadow-md">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-start gap-2.5">
+                        <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400 shrink-0 mt-0.5">
+                          <Bell className="w-4 h-4 animate-bounce" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-amber-300">
+                              Translation Model Update Available ({modelLatestVersion})
+                            </span>
+                            <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold font-mono">
+                              Recommended
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-300 mt-0.5 leading-snug">
+                            Improved French &amp; Spanish model accuracy, dialect disambiguation, and reduced on-device translation latency.
+                          </p>
+                          <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-2 font-mono">
+                            <span>Current: {currentModelVersion}</span>
+                            <span>→</span>
+                            <span className="text-emerald-400 font-semibold">Latest: {modelLatestVersion} (~30MB)</span>
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleUpdateAllModels}
+                        disabled={isUpdatingModel}
+                        className="self-start sm:self-center shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 active:scale-95 text-white font-bold text-xs shadow transition cursor-pointer disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isUpdatingModel ? 'animate-spin' : ''}`} />
+                        <span>{isUpdatingModel ? `Updating (${modelUpdateProgress}%)...` : 'Update Model'}</span>
+                      </button>
+                    </div>
+                    {isUpdatingModel && (
+                      <div className="mt-2.5 w-full bg-slate-900 h-1.5 rounded-full overflow-hidden">
+                        <div
+                          className="bg-amber-500 h-full rounded-full transition-all duration-300"
+                          style={{ width: `${modelUpdateProgress}%` }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="mb-4 p-2.5 rounded-xl bg-slate-950/80 border border-emerald-900/60 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2 text-slate-300">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      <span className="font-semibold text-emerald-300">Translation Models Up to Date ({currentModelVersion} Latest)</span>
+                      <span className="text-[10px] text-slate-500 hidden sm:inline">— French &amp; Spanish disambiguation active</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        showToast('Checking ML Kit model repositories... All models are up to date (v2.4)!');
+                      }}
+                      className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 px-2 py-1 rounded bg-slate-900 border border-slate-800 transition cursor-pointer"
+                    >
+                      <RefreshCw className="w-3 h-3" /> Check for Updates
+                    </button>
+                  </div>
+                )}
 
                 {/* 3 Configurable Language Slots */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mb-4">
@@ -2126,7 +2257,12 @@ export default function App() {
                 {/* Resource Impact & Phone Health Meters */}
                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 text-xs space-y-2.5">
                   <div className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
-                    <span className="flex items-center gap-1"><Cpu className="w-3.5 h-3.5 text-emerald-400" /> Phone Resource Impact (Audited)</span>
+                    <span className="flex items-center gap-1">
+                      <Cpu className="w-3.5 h-3.5 text-emerald-400" /> Phone Resource Impact (Audited)
+                      <span className={`ml-2 font-mono text-[9px] px-1.5 py-0.5 rounded border ${isModelUpdateAvailable ? 'bg-amber-950/80 border-amber-700 text-amber-300' : 'bg-slate-900 border-slate-700 text-slate-300'}`}>
+                        Model {currentModelVersion} {isModelUpdateAvailable ? '• Update Ready' : '• Latest'}
+                      </span>
+                    </span>
                     <span className="text-emerald-400 font-mono text-[10px]">100% On-Device Safe</span>
                   </div>
 

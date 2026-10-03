@@ -59,7 +59,7 @@
             android:id="@+id/tvLanguageLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="বাংলা → English"
+            android:text="Translate → English"
             android:textSize="10.5sp"
             android:textColor="@color/overlay_incoming_label"
             android:includeFontPadding="false"

@@ -24,15 +24,20 @@ object LanguageDetector {
     )
 
     private val SPANISH_WORDS = setOf(
-        "hola", "que", "por", "para", "como", "pero", "amigo", "bien", "gracias",
-        "esta", "estoy", "donde", "cuando", "todo", "nada", "quiero", "mucho",
-        "noche", "buenas", "buenos", "dias", "tarde", "casa", "hacer", "vamos",
-        "favor", "tiempo", "ahora", "siempre", "nunca", "trabajo", "hermano"
+        "hola", "gracias", "amigo", "amiga", "buenos", "buenas", "dias", "días",
+        "tarde", "tardes", "noche", "noches", "casa", "hacer", "vamos", "favor",
+        "tiempo", "ahora", "siempre", "nunca", "trabajo", "hermano", "estoy",
+        "donde", "dónde", "cuando", "cuándo", "cómo", "nada", "quiero", "mucho",
+        "usted", "ustedes", "pedido", "documentos", "reunión"
     )
 
     private val FRENCH_WORDS = setOf(
         "bonjour", "salut", "merci", "comment", "allez", "vous", "avec", "pour",
-        "bien", "dans", "nous", "cette", "aussi", "faire", "plus", "bonsoir"
+        "bien", "dans", "nous", "cette", "cet", "aussi", "faire", "plus", "bonsoir",
+        "aujourd'hui", "aujourdhui", "tres", "très", "rapport", "reunion", "réunion", "bureau",
+        "apres", "après", "pret", "prêt", "retrouve", "suis", "etes", "êtes", "sommes",
+        "votre", "notre", "est-ce", "demain", "midi", "soir", "oui", "non", "beaucoup",
+        "mon", "ami", "amie", "quand", "tout", "tous", "toute", "va", "vas", "pourquoi"
     )
 
     private val GERMAN_WORDS = setOf(
@@ -117,8 +122,8 @@ object LanguageDetector {
         if (checkUnicodeBlock(trimmed, 0x0C00..0x0C7F, 0.20f)) return "te"
 
         // 2. High-speed lexical heuristic for Latin-script languages
-        if (checkSpanish(trimmed)) return "es"
         if (checkFrench(trimmed)) return "fr"
+        if (checkSpanish(trimmed)) return "es"
         if (checkGerman(trimmed)) return "de"
         if (checkPortuguese(trimmed)) return "pt"
         if (checkItalian(trimmed)) return "it"
@@ -159,15 +164,20 @@ object LanguageDetector {
     }
 
     private fun checkSpanish(text: String): Boolean {
+        // Guard: If it contains French distinctive characters or French words, do NOT treat as Spanish
+        if (checkFrench(text)) return false
+
         val lower = text.lowercase()
-        if (lower.any { it in "ñáéíóú¿¡ü" }) return true
+        // Distinctive Spanish characters (exclude 'é' and 'ü' which are shared with French/German)
+        if (lower.any { it in "ñáíóú¿¡" }) return true
         val words = lower.split(Regex("[^\\p{L}]+"))
         return words.any { it in SPANISH_WORDS }
     }
 
     private fun checkFrench(text: String): Boolean {
         val lower = text.lowercase()
-        if (lower.any { it in "éàèêëîïôöùûüçœæ" }) return true
+        // Distinctive French characters
+        if (lower.any { it in "çœæèêëàâùûîïô" }) return true
         val words = lower.split(Regex("[^\\p{L}]+"))
         return words.any { it in FRENCH_WORDS }
     }

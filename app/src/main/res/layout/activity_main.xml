@@ -358,6 +358,44 @@
                     android:indeterminate="true"
                     android:visibility="gone" />
 
+                <!-- Model Update Notification & Action Banner -->
+                <LinearLayout
+                    android:id="@+id/layoutModelUpdateBanner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:background="#2E2415"
+                    android:padding="10dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tvModelUpdateTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="🔔 Model Update Available (v2.4)"
+                        android:textColor="#F6AD55"
+                        android:textStyle="bold"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/tvModelUpdateDesc"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Improved French &amp; Spanish disambiguation, richer vocabulary dictionaries, and faster on-device inference."
+                        android:textColor="#E2E8F0"
+                        android:textSize="11sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnUpdateModel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:layout_marginTop="6dp"
+                        android:text="Update All Models (v2.4)"
+                        android:textSize="11sp"
+                        android:backgroundTint="#D97706" />
+                </LinearLayout>
+
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

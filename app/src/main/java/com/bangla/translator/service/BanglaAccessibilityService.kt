@@ -387,6 +387,17 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
             return
         }
 
+        // Dynamically compute the exact language pair label for this specific message bubble
+        val effectiveLangCode = if (msg.languageCode.isNotBlank()) {
+            msg.languageCode
+        } else {
+            com.bangla.translator.translation.LanguageDetector.detectLanguage(msg.normalizedText) ?: appPreferences.sourceLanguageCode
+        }
+        val sourceMeta = com.bangla.translator.data.SupportedLanguages.findByCode(effectiveLangCode)
+        val targetMeta = com.bangla.translator.data.SupportedLanguages.findByCode(appPreferences.targetLanguageCode)
+        val dynamicPairLabel = "${sourceMeta.nativeName} → ${targetMeta.name}"
+        val dynamicBadgeLabel = targetMeta.code.uppercase()
+
         overlayController.showOverlay(
             displayKey = msg.displayKey,
             translatedText = translatedText,
@@ -394,8 +405,8 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
             sessionGeneration = taskGeneration,
             screenBounds = screenBounds,
             inputBarTop = currentTypingBarTop,
-            languagePairLabel = appPreferences.languagePairLabel,
-            badgeLabel = appPreferences.badgeLabel
+            languagePairLabel = dynamicPairLabel,
+            badgeLabel = dynamicBadgeLabel
         )
         ensureWatchdogRunning()
     }

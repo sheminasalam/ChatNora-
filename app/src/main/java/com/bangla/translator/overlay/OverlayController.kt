@@ -89,7 +89,7 @@ class OverlayController(
         sessionGeneration: Long,
         screenBounds: Rect,
         inputBarTop: Int? = null,
-        languagePairLabel: String = "বাংলা → English",
+        languagePairLabel: String = "Translate → English",
         badgeLabel: String = "EN"
     ) {
         runOnMainThread {
@@ -98,7 +98,7 @@ class OverlayController(
                 if (existing.sessionGeneration != sessionGeneration) {
                     removeOverlay(displayKey)
                 } else {
-                    updateOverlayView(existing, translatedText, targetBounds, screenBounds, inputBarTop)
+                    updateOverlayView(existing, translatedText, targetBounds, screenBounds, inputBarTop, languagePairLabel, badgeLabel)
                     return@runOnMainThread
                 }
             }
@@ -446,11 +446,23 @@ class OverlayController(
         translatedText: String,
         targetBounds: Rect,
         screenBounds: Rect,
-        inputBarTop: Int? = null
+        inputBarTop: Int? = null,
+        languagePairLabel: String? = null,
+        badgeLabel: String? = null
     ) {
         val tv = active.view.findViewById<TextView>(R.id.tvTranslatedText)
         if (tv.text != translatedText) {
             tv.text = translatedText
+        }
+
+        val tvLabel = active.view.findViewById<TextView>(R.id.tvLanguageLabel)
+        if (languagePairLabel != null && tvLabel?.text != languagePairLabel) {
+            tvLabel?.text = languagePairLabel
+        }
+
+        val tvBadge = active.view.findViewById<TextView>(R.id.tvBadgeText)
+        if (badgeLabel != null && tvBadge?.text != badgeLabel) {
+            tvBadge?.text = badgeLabel
         }
 
         active.currentBounds = targetBounds
