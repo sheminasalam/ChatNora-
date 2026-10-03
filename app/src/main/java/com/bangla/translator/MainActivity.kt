@@ -61,14 +61,41 @@ class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceCh
         TranslationEngine.checkModelAvailability()
     }
 
+    override fun onStart() {
+        super.onStart()
+        appPreferences.registerListener(this)
+        refreshAllUI()
+    }
+
     override fun onResume() {
         super.onResume()
         appPreferences.registerListener(this)
         refreshAllUI()
     }
 
+    override fun onRestart() {
+        super.onRestart()
+        refreshAllUI()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            refreshAllUI()
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        appPreferences.unregisterListener(this)
+    }
+
     override fun onPause() {
         super.onPause()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
         appPreferences.unregisterListener(this)
     }
 

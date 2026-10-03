@@ -112,9 +112,10 @@ class WhatsAppMessageScanner(
                                 if (!isInsideQuotedMessage(node)) {
                                     val normalized = candidateText.trim().replace(Regex("\\s+"), " ")
 
-                                    // 1. Check if candidate belongs to any of the active languages
-                                    // Order French before Spanish to prevent Spanish from prematurely claiming French messages
-                                    var matchedLang: String? = null
+                                    // 1. Check if candidate belongs to any of the active languages (including mixed multilingual messages)
+                                    val detectedLangs = LanguageDetector.getDetectedLanguages(candidateText)
+                                    val matchedActiveLangs = detectedLangs.filter { activeSourceLanguages.contains(it) }
+
                                     val orderedLangs = activeSourceLanguages.sortedWith { a, b ->
                                         when {
                                             a == "fr" && b == "es" -> -1
@@ -122,10 +123,19 @@ class WhatsAppMessageScanner(
                                             else -> 0
                                         }
                                     }
-                                    for (lang in orderedLangs) {
-                                        if (LanguageDetector.isTargetLanguageMessage(candidateText, lang, ratioThreshold)) {
-                                            matchedLang = lang
-                                            break
+
+                                    val matchedLang = when {
+                                        matchedActiveLangs.size > 1 -> matchedActiveLangs.joinToString("+")
+                                        matchedActiveLangs.size == 1 -> matchedActiveLangs[0]
+                                        else -> {
+                                            var singleMatch: String? = null
+                                            for (lang in orderedLangs) {
+                                                if (LanguageDetector.isTargetLanguageMessage(candidateText, lang, ratioThreshold)) {
+                                                    singleMatch = lang
+                                                    break
+                                                }
+                                            }
+                                            singleMatch
                                         }
                                     }
 

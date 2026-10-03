@@ -303,6 +303,42 @@ object SupportedLanguages {
         ...
     )
 }`
+  },
+  'MainActivity.kt': {
+    path: 'app/src/main/java/com/bangla/translator/MainActivity.kt',
+    category: 'Activity & UI Sync',
+    description: 'Main configuration activity with immediate onStart/onResume/onWindowFocusChanged UI synchronization, ignore list chips, dynamic language slots, and live status banners.',
+    content: `package com.bangla.translator
+
+class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceChangeListener {
+    override fun onStart() {
+        super.onStart()
+        appPreferences.registerListener(this)
+        refreshAllUI()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        appPreferences.registerListener(this)
+        refreshAllUI() // Immediately updates ignore list & slots when returning from WhatsApp!
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) refreshAllUI()
+    }
+
+    override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
+        runOnUiThread { refreshAllUI() }
+    }
+
+    private fun refreshAllUI() {
+        refreshLanguageSlotsUI()
+        refreshIgnoredLanguagesUI()
+        updateModelUpdateBannerUI()
+        updateAccessibilityStatus()
+    }
+}`
   }
 };
 
@@ -440,6 +476,25 @@ export function detectMessageLanguage(text: string): SupportedLangMeta | null {
 
   // English messages or no foreign markers -> null (Ignored by detection!)
   return null;
+}
+
+// Detects all languages present across sentences/clauses in a message (for multilingual translation)
+function getMessageLanguages(text: string): { code: string; label: string; nativeName: string; flag: string }[] {
+  if (!text) return [];
+  const segments = text.split(/(?<=[.!?\n])\s+/).map(s => s.trim()).filter(Boolean);
+  const detected = new Map<string, typeof ALL_LANGUAGES[0]>();
+  for (const seg of segments) {
+    const lang = detectMessageLanguage(seg);
+    if (lang && !detected.has(lang.code)) {
+      detected.set(lang.code, lang);
+    }
+  }
+  // Fallback to full string if split yielded nothing
+  if (detected.size === 0) {
+    const full = detectMessageLanguage(text);
+    if (full) detected.set(full.code, full);
+  }
+  return Array.from(detected.values());
 }
 
 export default function App() {
@@ -728,11 +783,26 @@ export default function App() {
       ja: { text: 'こんにちは、今日のミーティングは何時ですか？', sender: 'Kenji', translated: 'Hello, what time is the meeting today?' },
       ta: { text: 'வணக்கம் நண்பா, எப்படி இருக்கிறீர்கள்?', sender: 'Murugan', translated: 'Hello friend, how are you?' },
       bn: { text: 'তুমি কোথায় আছো এখন? জরুরি কথা ছিল।', sender: 'Rafiq', translated: 'Where are you right now? Had an urgent matter.' },
-      en: { text: 'Hey, are we still meeting today at 4 PM?', sender: 'David' }
+      en: { text: 'Hey, are we still meeting today at 4 PM?', sender: 'David' },
+      fr_es: {
+        text: 'Bonjour mon cher ami! ¿Cómo estás hoy? Todo bien por aquí. Merci beaucoup pour ton aide!',
+        sender: 'Julien & Carlos',
+        translated: 'Hello my dear friend! How are you today? All good around here. Thank you very much for your help!'
+      },
+      long: {
+        text: 'Bonjour mon ami! Je vous écris pour confirmer tous les points clés de notre réunion de travail. ¿Cómo estás hoy? Espero que la presentación esté marchando de manera excelente con el equipo técnico. Por favor, asegúrate de revisar todos los documentos adjuntos antes de las diez de la mañana. Nous devons finaliser le rapport trimestriel et valider le budget. Muchas gracias por tu dedicación y esfuerzo continuo. Bonne journée et à très bientôt!',
+        sender: 'Julien & Carlos',
+        translated: 'Hello my friend! I am writing to you to confirm all the key points of our business meeting. How are you today? I hope the presentation is going excellently with the technical team. Please make sure to review all attached documents before 10 AM. We need to finalize the quarterly report and validate the budget. Thank you very much for your dedication and continuous effort. Have a great day and see you very soon!'
+      }
     };
 
     const item = presets[langCode];
     if (!item) return;
+
+    const detectedLangs = getMessageLanguages(item.text);
+    const effectiveLangCode = langCode === 'fr_es' || langCode === 'long'
+      ? 'fr+es'
+      : (detectedLangs[0]?.code || langCode);
 
     const newMsg: MessageBubble = {
       id: `msg_sim_${Date.now()}`,
@@ -742,13 +812,15 @@ export default function App() {
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       translated: item.translated,
       isBengali: langCode === 'bn',
-      langCode: langCode
+      langCode: effectiveLangCode
     };
 
     setDynamicMessages(prev => [...prev, newMsg]);
     setDismissedPacks(prev => prev.filter(p => p !== langCode));
 
-    const isDownloaded = activePacks.includes(langCode);
+    const isDownloaded = effectiveLangCode.includes('+')
+      ? effectiveLangCode.split('+').some(code => activePacks.includes(code))
+      : activePacks.includes(langCode);
     const isEnglish = langCode === 'en';
 
     if (!isDownloaded && !isEnglish) {
@@ -886,8 +958,8 @@ export default function App() {
     chatFrench: [
       { id: 'fr1', sender: 'Julien (Paris)', text: "Bonjour mon ami, comment vas-tu aujourd'hui?", isMe: false, time: '10:05 AM', translated: 'Hello my friend, how are you today?', isBengali: false, langCode: 'fr' },
       { id: 'fr2', sender: 'Me', text: 'Ça va très bien, merci beaucoup!', isMe: true, time: '10:06 AM', translated: 'Doing very well, thank you very much!', isBengali: false, langCode: 'fr' },
-      { id: 'fr3', sender: 'Julien (Paris)', text: 'Est-ce que le rapport est prêt pour la réunion?', isMe: false, time: '10:10 AM', translated: 'Is the report ready for the meeting?', isBengali: false, langCode: 'fr' },
-      { id: 'fr4', sender: 'Julien (Paris)', text: 'On se retrouve au bureau cet après-midi.', isMe: false, time: '10:15 AM', translated: "Let's meet at the office this afternoon.", isBengali: false, langCode: 'fr' }
+      { id: 'fr3', sender: 'Julien (Paris)', text: "Bonjour mon cher ami! ¿Cómo estás hoy? Todo bien por aquí. Merci beaucoup!", isMe: false, time: '10:10 AM', translated: "Hello my dear friend! How are you today? All good around here. Thank you very much!", isBengali: false, langCode: 'fr+es' },
+      { id: 'fr4', sender: 'Julien (Paris)', text: "Je vous écris pour vous informer des détails complets de la réunion de projet prévue pour demain matin. ¿Cómo estás hoy? Espero que la presentación esté marchando de manera excelente con el equipo técnico. Por favor, asegúrate de revisar todos los documentos adjuntos antes de las diez de la mañana. Nous devons finaliser le rapport trimestriel et valider le budget. Merci infiniment pour votre coopération et votre soutien continu! ¡Nos vemos pronto!", isMe: false, time: '10:15 AM', translated: "I am writing to inform you of the complete details of the project meeting scheduled for tomorrow morning. How are you today? I hope the presentation is going excellently with the technical team. Please make sure to review all attached documents before 10 AM. We need to finalize the quarterly report and validate the budget. Thank you infinitely for your cooperation and continued support! See you soon!", isBengali: false, langCode: 'fr+es' }
     ]
   }), [dynamicMessages]);
 
@@ -1363,6 +1435,20 @@ export default function App() {
                   >
                     <span>🇬🇧</span> <span className="font-semibold truncate">English</span>
                   </button>
+                  <button
+                    onClick={() => handleSimulateIncoming('fr_es')}
+                    className="p-1 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-700/60 hover:border-emerald-500 text-[10px] flex items-center justify-center gap-1 text-emerald-300 font-bold transition cursor-pointer"
+                    title="Simulate Multilingual message containing both French and Spanish in the same message"
+                  >
+                    <span>🌐</span> <span className="truncate">Mixed FR+ES</span>
+                  </button>
+                  <button
+                    onClick={() => handleSimulateIncoming('long')}
+                    className="p-1 rounded-lg bg-sky-950/60 hover:bg-sky-900/60 border border-sky-700/60 hover:border-sky-500 text-[10px] flex items-center justify-center gap-1 text-sky-300 font-bold transition cursor-pointer"
+                    title="Simulate long message with vertical scrolling in translation bubble"
+                  >
+                    <span>↕</span> <span className="truncate">Long Scroll</span>
+                  </button>
                 </div>
               </div>
 
@@ -1708,20 +1794,33 @@ export default function App() {
                         const isExpanded = expandedMsgId === msg.id;
                         const isOtherExpanded = expandedMsgId !== null && !isExpanded;
 
-                        // Check if this message is in any of the downloaded active pairs
-                        const msgDetected = detectMessageLanguage(msg.text);
-                        const effectiveCode = msg.langCode || (msgDetected ? msgDetected.code : (msg.isBengali ? 'bn' : null));
-                        const matchedPair = effectiveCode ? activePairs.find(p => p.sourceCode === effectiveCode) : null;
-                        const isPackActive = !!matchedPair;
-                        const effectiveMeta = effectiveCode ? ALL_LANGUAGES.find(l => l.code === effectiveCode) : msgDetected;
+                        // Check if this message is in any of the downloaded active pairs (supports single language or multilingual mixed)
+                        const detectedLanguages = getMessageLanguages(msg.text);
+                        const isMultilingual = (msg.langCode?.includes('+') ?? false) || detectedLanguages.length > 1;
 
-                        const sourceName = matchedPair
-                          ? `${matchedPair.label} (${matchedPair.nativeName})`
-                          : effectiveMeta
-                          ? `${effectiveMeta.label} (${effectiveMeta.nativeName})`
-                          : 'Detected Language';
-                        const targetName = matchedPair?.targetLabel || 'English';
-                        const bubbleTitle = `${sourceName} → ${targetName}`;
+                        const detectedCodes = isMultilingual
+                          ? (msg.langCode ? msg.langCode.split('+') : detectedLanguages.map(l => l.code))
+                          : [msg.langCode || (detectedLanguages[0]?.code ?? (msg.isBengali ? 'bn' : null))].filter(Boolean) as string[];
+
+                        // Active if ANY of the detected languages is in activePairs
+                        const isPackActive = detectedCodes.some(code => activePacks.includes(code)) || (msg.isBengali && activePacks.includes('bn'));
+
+                        const matchedPairs = detectedCodes.map(code => activePairs.find(p => p.sourceCode === code)).filter(Boolean) as LanguagePair[];
+                        const matchedMetas = detectedCodes
+                          .map(code => ALL_LANGUAGES.find(l => l.code === code))
+                          .filter((l): l is SupportedLangMeta => Boolean(l));
+
+                        const bubbleTitle = isMultilingual && matchedMetas.length > 1
+                          ? `${matchedMetas.map(m => `${m.label} (${m.nativeName})`).join(' + ')} → English`
+                          : matchedPairs.length > 0 && matchedPairs[0]
+                          ? `${matchedPairs[0].label} (${matchedPairs[0].nativeName}) → ${matchedPairs[0].targetLabel}`
+                          : matchedMetas.length > 0 && matchedMetas[0]
+                          ? `${matchedMetas[0].label} (${matchedMetas[0].nativeName}) → English`
+                          : 'Translate → English';
+
+                        const dynamicBadge = isMultilingual && detectedCodes.length > 1
+                          ? detectedCodes.map(c => c.toUpperCase()).join('+')
+                          : (matchedPairs[0]?.targetCode?.toUpperCase() || 'EN');
 
                         return (
                           <div
@@ -1754,46 +1853,52 @@ export default function App() {
                                       ? 'bg-[#0B2B20] border-[#144635] text-[#25D366]'
                                       : 'bg-[#1F2C34] border-[#2A3942] text-[#8696A0]'
                                   }`}
-                                  title={`Click to view ${effectiveMeta?.label || 'translation'}`}
+                                  title={`Click to view ${bubbleTitle}`}
                                 >
                                   <Languages className="w-2.5 h-2.5" />
                                   <span className="text-[9px] font-bold">
-                                    {matchedPair ? matchedPair.targetCode.toUpperCase() : 'EN'}
+                                    {dynamicBadge}
                                   </span>
                                 </button>
                               )}
                             </div>
 
-                            {/* Expanded State: Chat Bubble matching WhatsApp shape & width */}
+                            {/* Expanded State: Chat Bubble matching WhatsApp shape & width with Vertical Scrolling */}
                             {overlayEnabled && msg.translated && isExpanded && (
                               <div
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setExpandedMsgId(null);
                                 }}
-                                className={`mt-1 max-w-[85%] animate-fadeIn cursor-pointer ${msg.isMe ? 'self-end' : 'self-start'}`}
+                                className={`mt-1 max-w-[88%] animate-fadeIn cursor-pointer ${msg.isMe ? 'self-end' : 'self-start'}`}
                               >
                                 <div
-                                  className={`rounded-[14px] px-3 py-1.5 border shadow-xl transition ${
+                                  className={`rounded-[14px] px-3 py-2 border shadow-xl transition ${
                                     msg.isMe
                                       ? 'bg-[#0B2B20] border-[#144635]'
                                       : 'bg-[#202c33] border-[#2A3942]'
                                   }`}
                                   title="Click anywhere to close"
                                 >
-                                  <div className="flex items-center justify-between mb-0.5">
+                                  <div className="flex items-center justify-between mb-1 pb-1 border-b border-[#2A3942]/60">
                                     <span
-                                      className={`text-[10px] tracking-wide font-medium ${
+                                      className={`text-[10px] tracking-wide font-medium truncate max-w-[70%] ${
                                         msg.isMe ? 'text-[#25D366]' : 'text-[#8696A0]'
                                       }`}
                                     >
                                       {bubbleTitle}
                                     </span>
-                                    <span className="text-[9px] text-slate-500 font-mono ml-2">click anywhere to close</span>
+                                    <span className="text-[9px] text-slate-500 font-mono ml-2 shrink-0">close ✕</span>
                                   </div>
-                                  <p className="text-[13px] text-[#E9EDEF] font-normal leading-snug">
-                                    {msg.translated}
-                                  </p>
+                                  <div className="max-h-36 sm:max-h-44 overflow-y-auto overscroll-contain pr-1 text-[13px] text-[#E9EDEF] font-normal leading-snug scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent">
+                                    <p className="whitespace-pre-wrap">{msg.translated}</p>
+                                  </div>
+                                  {(msg.translated?.length || 0) > 130 && (
+                                    <div className="text-[9px] text-emerald-400/90 font-mono mt-1 pt-1 border-t border-[#2A3942]/60 flex items-center justify-between">
+                                      <span className="flex items-center gap-1">↕ Scroll vertically for full text</span>
+                                      <span className="text-slate-400">({msg.translated?.length} chars)</span>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             )}

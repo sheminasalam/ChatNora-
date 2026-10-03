@@ -387,16 +387,32 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
             return
         }
 
-        // Dynamically compute the exact language pair label for this specific message bubble
-        val effectiveLangCode = if (msg.languageCode.isNotBlank()) {
-            msg.languageCode
+        // Dynamically compute the exact language pair label for this specific message bubble (supports multilingual)
+        val isMultilingual = msg.languageCode.contains("+")
+        val codes = if (isMultilingual) {
+            msg.languageCode.split("+").filter { it.isNotBlank() }
         } else {
-            com.bangla.translator.translation.LanguageDetector.detectLanguage(msg.normalizedText) ?: appPreferences.sourceLanguageCode
+            val detected = com.bangla.translator.translation.LanguageDetector.detectLanguage(msg.normalizedText)
+            listOf(if (msg.languageCode.isNotBlank()) msg.languageCode else (detected ?: appPreferences.sourceLanguageCode))
         }
-        val sourceMeta = com.bangla.translator.data.SupportedLanguages.findByCode(effectiveLangCode)
+
         val targetMeta = com.bangla.translator.data.SupportedLanguages.findByCode(appPreferences.targetLanguageCode)
-        val dynamicPairLabel = "${sourceMeta.nativeName} → ${targetMeta.name}"
-        val dynamicBadgeLabel = targetMeta.code.uppercase()
+        val dynamicPairLabel = if (codes.size > 1) {
+            val srcNames = codes.map { code ->
+                val meta = com.bangla.translator.data.SupportedLanguages.findByCode(code)
+                "${meta.name} (${meta.nativeName})"
+            }.joinToString(" + ")
+            "$srcNames → ${targetMeta.name}"
+        } else {
+            val sourceMeta = com.bangla.translator.data.SupportedLanguages.findByCode(codes[0])
+            "${sourceMeta.name} (${sourceMeta.nativeName}) → ${targetMeta.name}"
+        }
+
+        val dynamicBadgeLabel = if (codes.size > 1) {
+            codes.joinToString("+") { it.uppercase() }
+        } else {
+            targetMeta.code.uppercase()
+        }
 
         overlayController.showOverlay(
             displayKey = msg.displayKey,

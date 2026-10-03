@@ -63,6 +63,43 @@ object LanguageDetector {
         } catch (e: Exception) {}
     }
 
+    data class TextSegment(
+        val text: String,
+        val languageCode: String?
+    )
+
+    /**
+     * Splits a multi-language message into natural sentences/segments and detects the language
+     * of each segment. This allows messages containing mixed languages (e.g. French sentence followed by Spanish)
+     * to be accurately translated segment-by-segment using their respective models.
+     */
+    fun detectLanguageSegments(text: CharSequence?): List<TextSegment> {
+        if (text.isNullOrBlank()) return emptyList()
+        val str = text.toString().trim()
+
+        // Split by sentence terminators (. ! ? \n ¿ ¡) while preserving meaningful text
+        val sentenceRegex = Regex("(?<=[.!?\\n])\\s+")
+        val rawParts = str.split(sentenceRegex).map { it.trim() }.filter { it.isNotEmpty() }
+
+        if (rawParts.size <= 1) {
+            val detected = detectLanguage(str)
+            return listOf(TextSegment(str, detected))
+        }
+
+        return rawParts.map { part ->
+            val detected = detectLanguage(part)
+            TextSegment(part, detected)
+        }
+    }
+
+    /**
+     * Returns all unique foreign language codes detected across segments in the text.
+     */
+    fun getDetectedLanguages(text: CharSequence?): List<String> {
+        val segments = detectLanguageSegments(text)
+        return segments.mapNotNull { it.languageCode }.distinct()
+    }
+
     /**
      * Determines whether the given text is written in the specified source language.
      */

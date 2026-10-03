@@ -430,44 +430,76 @@ dependencies {
             android:includeFontPadding="false" />
     </LinearLayout>
 
-    <!-- Expanded State: Full Attached Translation Inset (Shown on Click) -->
+    <!-- Expanded State: Chat Bubble Shape & Size (Matching WhatsApp Bubble) with Vertical Scrolling -->
     <LinearLayout
         android:id="@+id/llExpandedCard"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:visibility="gone"
         android:background="@drawable/bg_overlay_incoming"
-        android:paddingStart="10dp"
-        android:paddingTop="5dp"
-        android:paddingEnd="10dp"
-        android:paddingBottom="6dp"
-        android:clickable="true"
-        android:focusable="true">
+        android:paddingStart="12dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="7dp">
 
-        <TextView
-            android:id="@+id/tvLanguageLabel"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Translate → English"
-            android:textSize="10.5sp"
-            android:textColor="@color/overlay_incoming_label"
-            android:includeFontPadding="false"
-            android:letterSpacing="0.02" />
-
-        <TextView
-            android:id="@+id/tvTranslatedText"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2.5dp"
-            android:textColor="@color/overlay_text"
-            android:textSize="13.5sp"
-            android:textStyle="normal"
-            android:lineSpacingExtra="1.5dp"
-            android:includeFontPadding="false"
-            android:maxLines="8"
-            android:ellipsize="end"
-            android:textIsSelectable="false" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/tvLanguageLabel"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Translate → English"
+                android:textSize="10.5sp"
+                android:textColor="@color/overlay_incoming_label"
+                android:includeFontPadding="false"
+                android:letterSpacing="0.02" />
+
+            <TextView
+                android:id="@+id/tvCloseExpanded"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="✕"
+                android:textSize="11sp"
+                android:textColor="@color/overlay_incoming_label"
+                android:paddingStart="6dp"
+                android:paddingEnd="2dp"
+                android:paddingTop="1dp"
+                android:paddingBottom="1dp"
+                android:clickable="true"
+                android:focusable="true" />
+        </LinearLayout>
+
+        <ScrollView
+            android:id="@+id/svTranslatedText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:scrollbars="vertical"
+            android:fadeScrollbars="false"
+            android:scrollbarSize="3.5dp"
+            android:scrollbarThumbVertical="@android:color/darker_gray"
+            android:overScrollMode="ifContentScrolls"
+            android:isScrollContainer="true"
+            android:fillViewport="true">
+
+            <TextView
+                android:id="@+id/tvTranslatedText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/overlay_text"
+                android:textSize="13.5sp"
+                android:textStyle="normal"
+                android:lineSpacingExtra="2dp"
+                android:maxLines="200"
+                android:includeFontPadding="false"
+                android:textIsSelectable="false" />
+        </ScrollView>
     </LinearLayout>
 
 </FrameLayout>
@@ -769,6 +801,26 @@ object LanguageDetector {
     private val URL_PATTERN = Pattern.compile("^https?://[\\\\w.-]+(?:\\\\.[\\\\w\\\\.-]+)+[/#?]?.*$", Pattern.CASE_INSENSITIVE)
     private val TIMESTAMP_PATTERN = Pattern.compile("^\\\\d{1,2}:\\\\d{2}(?:\\\\s?[APap][Mm])?$")
 
+    data class TextSegment(val text: String, val languageCode: String?)
+    fun detectLanguageSegments(text: CharSequence?): List<TextSegment> {
+        if (text.isNullOrBlank()) return emptyList()
+        val str = text.toString().trim()
+        val sentenceRegex = Regex("(?<=[.!?\\n])\\s+")
+        val rawParts = str.split(sentenceRegex).map { it.trim() }.filter { it.isNotEmpty() }
+        if (rawParts.size <= 1) {
+            val detected = detectLanguage(str)
+            return listOf(TextSegment(str, detected))
+        }
+        return rawParts.map { part ->
+            val detected = detectLanguage(part)
+            TextSegment(part, detected)
+        }
+    }
+    fun getDetectedLanguages(text: CharSequence?): List<String> {
+        val segments = detectLanguageSegments(text)
+        return segments.mapNotNull { it.languageCode }.distinct()
+    }
+
     fun isTargetLanguageMessage(text: CharSequence?, sourceLangCode: String = "bn", threshold: Float = 0.20f): Boolean {
         if (text.isNullOrBlank()) return false
         val trimmed = text.toString().trim()
@@ -1034,7 +1086,14 @@ object TranslationEngine {
         val cleanText = text.trim()
         if (cleanText.isEmpty()) { onSuccess(""); return }
 
-        val effectiveSource = sourceCode ?: LanguageDetector.detectLanguage(cleanText) ?: currentSourceLang
+        val detectedLangs = LanguageDetector.getDetectedLanguages(cleanText)
+        val isMultilingual = (sourceCode?.contains("+") == true) || (detectedLangs.size > 1)
+
+        val effectiveSource = when {
+            isMultilingual -> if (sourceCode?.contains("+") == true) sourceCode else detectedLangs.joinToString("+")
+            sourceCode != null -> sourceCode
+            else -> LanguageDetector.detectLanguage(cleanText) ?: currentSourceLang
+        }
         val cacheKey = "\$effectiveSource:\$cleanText"
         val cached = cache.get(cacheKey) ?: cache.get(cleanText)
         if (cached != null) { onSuccess(cached); return }
@@ -1043,7 +1102,8 @@ object TranslationEngine {
             var translatedOnline: String? = null
             try {
                 val encodedText = URLEncoder.encode(cleanText, "UTF-8")
-                val urlStr = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=\$effectiveSource&tl=\$targetCode&dt=t&q=\$encodedText"
+                val onlineSl = if (isMultilingual) "auto" else effectiveSource
+                val urlStr = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=\$onlineSl&tl=\$targetCode&dt=t&q=\$encodedText"
                 val conn = URL(urlStr).openConnection() as HttpURLConnection
                 conn.connectTimeout = 3000
                 conn.readTimeout = 3000
@@ -1065,17 +1125,60 @@ object TranslationEngine {
                 return@execute
             }
 
-            try {
-                val translator = getOrCreateTranslator(effectiveSource)
-                translator.translate(cleanText)
-                    .addOnSuccessListener { res ->
-                        cache.put(cacheKey, res)
-                        cache.put(cleanText, res)
-                        onSuccess(res)
+            if (isMultilingual) {
+                val segments = LanguageDetector.detectLanguageSegments(cleanText)
+                if (segments.isEmpty()) { onSuccess(cleanText); return@execute }
+                val translatedSegments = arrayOfNulls<String>(segments.size)
+                val remaining = java.util.concurrent.atomic.AtomicInteger(segments.size)
+                for (i in segments.indices) {
+                    val seg = segments[i]
+                    val segLang = seg.languageCode ?: currentSourceLang
+                    if (seg.languageCode == "en") {
+                        translatedSegments[i] = seg.text
+                        if (remaining.decrementAndGet() == 0) {
+                            val full = translatedSegments.filterNotNull().joinToString(" ")
+                            cache.put(cleanText, full); onSuccess(full)
+                        }
+                    } else {
+                        try {
+                            val translator = getOrCreateTranslator(segLang)
+                            translator.translate(seg.text)
+                                .addOnSuccessListener { res ->
+                                    translatedSegments[i] = res
+                                    if (remaining.decrementAndGet() == 0) {
+                                        val full = translatedSegments.filterNotNull().joinToString(" ")
+                                        cache.put(cleanText, full); onSuccess(full)
+                                    }
+                                }
+                                .addOnFailureListener {
+                                    translatedSegments[i] = seg.text
+                                    if (remaining.decrementAndGet() == 0) {
+                                        val full = translatedSegments.filterNotNull().joinToString(" ")
+                                        cache.put(cleanText, full); onSuccess(full)
+                                    }
+                                }
+                        } catch (e: Exception) {
+                            translatedSegments[i] = seg.text
+                            if (remaining.decrementAndGet() == 0) {
+                                val full = translatedSegments.filterNotNull().joinToString(" ")
+                                cache.put(cleanText, full); onSuccess(full)
+                            }
+                        }
                     }
-                    .addOnFailureListener { err -> onFailure?.invoke(err) ?: onSuccess(cleanText) }
-            } catch (e: Exception) {
-                onFailure?.invoke(e) ?: onSuccess(cleanText)
+                }
+            } else {
+                try {
+                    val translator = getOrCreateTranslator(effectiveSource)
+                    translator.translate(cleanText)
+                        .addOnSuccessListener { res ->
+                            cache.put(cacheKey, res)
+                            cache.put(cleanText, res)
+                            onSuccess(res)
+                        }
+                        .addOnFailureListener { err -> onFailure?.invoke(err) ?: onSuccess(cleanText) }
+                } catch (e: Exception) {
+                    onFailure?.invoke(e) ?: onSuccess(cleanText)
+                }
             }
         }
     }
@@ -1131,11 +1234,20 @@ class WhatsAppMessageScanner(
                             if (!isInsideQuotedMessage(node)) {
                                 val text = (node.text ?: node.contentDescription)?.toString()
                                 if (!text.isNullOrBlank() && !node.isEditable) {
-                                    var matchedLang: String? = null
-                                    for (lang in activeSourceLanguages) {
-                                        if (LanguageDetector.isTargetLanguageMessage(text, lang, ratioThreshold)) {
-                                            matchedLang = lang
-                                            break
+                                    val detectedLangs = LanguageDetector.getDetectedLanguages(text)
+                                    val matchedActive = detectedLangs.filter { activeSourceLanguages.contains(it) }
+                                    var matchedLang: String? = when {
+                                        matchedActive.size > 1 -> matchedActive.joinToString("+")
+                                        matchedActive.size == 1 -> matchedActive[0]
+                                        else -> {
+                                            var single: String? = null
+                                            for (lang in activeSourceLanguages) {
+                                                if (LanguageDetector.isTargetLanguageMessage(text, lang, ratioThreshold)) {
+                                                    single = lang
+                                                    break
+                                                }
+                                            }
+                                            single
                                         }
                                     }
 
@@ -1410,16 +1522,29 @@ class OverlayController(private val context: Context, private val windowManager:
         val posX: Int
         val posY: Int
 
+        val sv = active.view.findViewById<ScrollView>(R.id.svTranslatedText)
         if (isExpanded) {
+            val spaceBelow = bottomLimit - (active.currentBounds.bottom + gapPx)
+            val spaceAbove = (active.currentBounds.top - gapPx) - (28 * density).toInt()
+            val availableSpace = maxOf(spaceBelow, spaceAbove)
+            val maxBubbleHeight = (screenH * 0.38f).toInt().coerceAtMost((availableSpace - (8 * density).toInt()).coerceAtLeast((140 * density).toInt()))
+            sv?.layoutParams?.height = ViewGroup.LayoutParams.WRAP_CONTENT
             active.view.measure(View.MeasureSpec.makeMeasureSpec(bubbleWidth, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            if (active.view.measuredHeight > maxBubbleHeight) {
+                val overhead = (active.view.measuredHeight - (sv?.measuredHeight ?: 0)).coerceAtLeast((28 * density).toInt())
+                val scrollHeight = (maxBubbleHeight - overhead).coerceAtLeast((90 * density).toInt())
+                sv?.layoutParams?.height = scrollHeight
+                active.view.measure(View.MeasureSpec.makeMeasureSpec(bubbleWidth, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            }
             measuredWidth = bubbleWidth
             measuredHeight = active.view.measuredHeight
             var calculatedX = if (isOutgoing) active.currentBounds.right - measuredWidth else active.currentBounds.left
             if (calculatedX + measuredWidth > screenW - marginPx) calculatedX = screenW - measuredWidth - marginPx
             if (calculatedX < marginPx) calculatedX = marginPx
             posX = calculatedX
-            posY = if (active.currentBounds.bottom + gapPx + measuredHeight <= bottomLimit) active.currentBounds.bottom + gapPx else (active.currentBounds.top - measuredHeight - gapPx).coerceAtLeast((28 * density).toInt())
+            posY = if (spaceBelow >= measuredHeight || spaceBelow >= spaceAbove) active.currentBounds.bottom + gapPx else (active.currentBounds.top - measuredHeight - gapPx).coerceAtLeast((28 * density).toInt())
         } else {
+            sv?.layoutParams?.height = ViewGroup.LayoutParams.WRAP_CONTENT
             active.view.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
             measuredWidth = active.view.measuredWidth
             measuredHeight = active.view.measuredHeight
@@ -1888,10 +2013,20 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
                     sourceCode = msg.languageCode,
                     onSuccess = { translated ->
                         if (sessionGeneration.get() == currentGen) {
-                            val srcMeta = SupportedLanguages.findByCode(msg.languageCode)
+                            val isMulti = msg.languageCode.contains("+")
+                            val codes = if (isMulti) msg.languageCode.split("+").filter { it.isNotBlank() } else listOf(msg.languageCode)
                             val trgMeta = SupportedLanguages.findByCode(appPreferences.targetLanguageCode)
-                            val dynamicPairLabel = "\${srcMeta.name} (\${srcMeta.nativeName}) → \${trgMeta.name}"
-                            val dynamicBadgeLabel = trgMeta.code.uppercase()
+                            val dynamicPairLabel = if (codes.size > 1) {
+                                val sNames = codes.map { c ->
+                                    val m = SupportedLanguages.findByCode(c)
+                                    "\${m.name} (\${m.nativeName})"
+                                }.joinToString(" + ")
+                                "\$sNames → \${trgMeta.name}"
+                            } else {
+                                val srcMeta = SupportedLanguages.findByCode(codes.firstOrNull() ?: "bn")
+                                "\${srcMeta.name} (\${srcMeta.nativeName}) → \${trgMeta.name}"
+                            }
+                            val dynamicBadgeLabel = if (codes.size > 1) codes.joinToString("+") { it.uppercase() } else trgMeta.code.uppercase()
 
                             overlayController.showOverlay(
                                 displayKey = msg.displayKey,
@@ -2014,87 +2149,71 @@ class NotificationTranslationService : NotificationListenerService() {
 
   'app/src/main/java/com/bangla/translator/MainActivity.kt': `package com.bangla.translator
 
+import android.Manifest
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.text.TextUtils
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.bangla.translator.data.AppPreferences
 import com.bangla.translator.data.ModelDownloadState
 import com.bangla.translator.data.SupportedLanguages
 import com.bangla.translator.databinding.ActivityMainBinding
+import com.bangla.translator.service.BanglaAccessibilityService
+import com.bangla.translator.service.NotificationTranslationService
 import com.bangla.translator.translation.TranslationEngine
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceChangeListener {
+
     private lateinit var binding: ActivityMainBinding
     private lateinit var appPreferences: AppPreferences
+
+    // Runtime permission launcher for Android 13+ POST_NOTIFICATIONS
+    private val requestNotificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            appPreferences.isNotificationTranslationEnabled = true
+            binding.switchNotifications.isChecked = true
+            checkNotificationListenerStatus()
+        } else {
+            binding.switchNotifications.isChecked = false
+            Toast.makeText(this, "Notification permission is required to display translated alerts.", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
         appPreferences = AppPreferences(this)
 
-        val srcAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, SupportedLanguages.ALL)
-        binding.spinnerSourceLanguage.adapter = srcAdapter
-        val trgAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, SupportedLanguages.TARGET_LANGUAGES)
-        binding.spinnerTargetLanguage.adapter = trgAdapter
+        setupLanguageSpinners()
+        setupListeners()
+        observeModelState()
+        TranslationEngine.setLanguagePair(appPreferences.sourceLanguageCode, appPreferences.targetLanguageCode)
+        TranslationEngine.checkModelAvailability()
+    }
 
+    override fun onStart() {
+        super.onStart()
+        appPreferences.registerListener(this)
         refreshAllUI()
-
-        binding.spinnerSourceLanguage.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                val item = SupportedLanguages.ALL[pos]
-                if (item.code != appPreferences.sourceLanguageCode) {
-                    appPreferences.sourceLanguageCode = item.code
-                    TranslationEngine.setLanguagePair(item.code, appPreferences.targetLanguageCode)
-                }
-            }
-            override fun onNothingSelected(p: AdapterView<*>?) {}
-        }
-
-        binding.spinnerTargetLanguage.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                val item = SupportedLanguages.TARGET_LANGUAGES[pos]
-                if (item.code != appPreferences.targetLanguageCode) {
-                    appPreferences.targetLanguageCode = item.code
-                    TranslationEngine.setLanguagePair(appPreferences.sourceLanguageCode, item.code)
-                }
-            }
-            override fun onNothingSelected(p: AdapterView<*>?) {}
-        }
-
-        binding.btnEnableAccessibility.setOnClickListener {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-        }
-
-        binding.btnDownloadModel.setOnClickListener {
-            binding.pbModelDownload.visibility = View.VISIBLE
-            TranslationEngine.prepareModelIfNeeded(
-                onSuccess = {
-                    runOnUiThread {
-                        binding.pbModelDownload.visibility = View.GONE
-                        Toast.makeText(this, "Model ready offline!", Toast.LENGTH_SHORT).show()
-                    }
-                },
-                onFailure = {
-                    runOnUiThread {
-                        binding.pbModelDownload.visibility = View.GONE
-                        Toast.makeText(this, "Download error: \${it.message}", Toast.LENGTH_LONG).show()
-                    }
-                }
-            )
-        }
-
-        binding.btnDeleteModel.setOnClickListener {
-            TranslationEngine.deleteModel {
-                runOnUiThread { Toast.makeText(this, "Model deleted.", Toast.LENGTH_SHORT).show() }
-            }
-        }
     }
 
     override fun onResume() {
@@ -2103,24 +2222,621 @@ class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceCh
         refreshAllUI()
     }
 
+    override fun onRestart() {
+        super.onRestart()
+        refreshAllUI()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            refreshAllUI()
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        appPreferences.unregisterListener(this)
+    }
+
     override fun onPause() {
         super.onPause()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
         appPreferences.unregisterListener(this)
     }
 
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
-        runOnUiThread { refreshAllUI() }
+        runOnUiThread {
+            refreshAllUI()
+        }
     }
 
+    /**
+     * Completely synchronizes all on-screen UI components with the current AppPreferences.
+     * Called whenever the user returns to the app (onResume) or when preferences are modified in the background.
+     */
     private fun refreshAllUI() {
-        val srcIdx = SupportedLanguages.ALL.indexOfFirst { it.code == appPreferences.sourceLanguageCode }.coerceAtLeast(0)
-        if (binding.spinnerSourceLanguage.selectedItemPosition != srcIdx) {
-            binding.spinnerSourceLanguage.setSelection(srcIdx)
+        updateAccessibilityStatus()
+        checkNotificationListenerStatus()
+        TranslationEngine.checkModelAvailability()
+        TranslationEngine.purgeInactiveModels(appPreferences.activeSourceLanguages)
+        updateModelUpdateBannerUI()
+
+        // Sync feature switches
+        if (binding.switchOverlay.isChecked != appPreferences.isOverlayEnabled) {
+            binding.switchOverlay.isChecked = appPreferences.isOverlayEnabled
         }
-        val trgIdx = SupportedLanguages.TARGET_LANGUAGES.indexOfFirst { it.code == appPreferences.targetLanguageCode }.coerceAtLeast(0)
-        if (binding.spinnerTargetLanguage.selectedItemPosition != trgIdx) {
-            binding.spinnerTargetLanguage.setSelection(trgIdx)
+        if (binding.switchNotifications.isChecked != appPreferences.isNotificationTranslationEnabled) {
+            binding.switchNotifications.isChecked = appPreferences.isNotificationTranslationEnabled
         }
+        if (binding.switchAutoDetectPrompt.isChecked != appPreferences.isAutoDetectPromptEnabled) {
+            binding.switchAutoDetectPrompt.isChecked = appPreferences.isAutoDetectPromptEnabled
+        }
+
+        // Sync Target Language selection
+        val targetLanguages = SupportedLanguages.TARGET_LANGUAGES
+        val targetIdx = targetLanguages.indexOfFirst { it.code == appPreferences.targetLanguageCode }.coerceAtLeast(0)
+        if (binding.spinnerTargetLanguage.selectedItemPosition != targetIdx) {
+            binding.spinnerTargetLanguage.setSelection(targetIdx)
+        }
+
+        // Refresh all dynamic widgets
+        refreshLanguageSlotsUI()
+        refreshIgnoredLanguagesUI()
+    }
+
+    private fun setupLanguageSpinners() {
+        val allLanguages = SupportedLanguages.ALL
+        val targetLanguages = SupportedLanguages.TARGET_LANGUAGES
+
+        val sourceAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, allLanguages)
+        binding.spinnerSourceLanguage.adapter = sourceAdapter
+
+        val slot2Adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, allLanguages)
+        binding.spinnerSlot2Language.adapter = slot2Adapter
+
+        val slot3Adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, allLanguages)
+        binding.spinnerSlot3Language.adapter = slot3Adapter
+
+        val targetAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, targetLanguages)
+        binding.spinnerTargetLanguage.adapter = targetAdapter
+
+        val initialTargetIndex = targetLanguages.indexOfFirst { it.code == appPreferences.targetLanguageCode }.coerceAtLeast(0)
+        binding.spinnerTargetLanguage.setSelection(initialTargetIndex)
+
+        refreshLanguageSlotsUI()
+
+        // Slot 1 change listener
+        binding.spinnerSourceLanguage.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val selected = allLanguages[position]
+                val pairs = appPreferences.getLanguagePairs().toMutableList()
+                if (pairs.isNotEmpty() && pairs[0].sourceCode != selected.code) {
+                    val oldCode = pairs[0].sourceCode
+                    pairs[0] = com.bangla.translator.data.LanguagePairPreference(selected.code, appPreferences.targetLanguageCode)
+                    appPreferences.saveLanguagePairs(pairs)
+                    val remaining = appPreferences.activeSourceLanguages
+                    if (!remaining.contains(oldCode)) {
+                        val oldMeta = SupportedLanguages.findByCode(oldCode)
+                        TranslationEngine.deleteModel(oldMeta.mlKitCode)
+                    }
+                    TranslationEngine.prepareModelIfNeeded(sourceLangCode = selected.mlKitCode)
+                    updateLanguagePairSummary()
+                }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // Slot 2 change listener
+        binding.spinnerSlot2Language.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val selected = allLanguages[position]
+                val pairs = appPreferences.getLanguagePairs().toMutableList()
+                if (pairs.size > 1 && pairs[1].sourceCode != selected.code) {
+                    val oldCode = pairs[1].sourceCode
+                    pairs[1] = com.bangla.translator.data.LanguagePairPreference(selected.code, appPreferences.targetLanguageCode)
+                    appPreferences.saveLanguagePairs(pairs)
+                    val remaining = appPreferences.activeSourceLanguages
+                    if (!remaining.contains(oldCode)) {
+                        val oldMeta = SupportedLanguages.findByCode(oldCode)
+                        TranslationEngine.deleteModel(oldMeta.mlKitCode)
+                    }
+                    TranslationEngine.prepareModelIfNeeded(sourceLangCode = selected.mlKitCode)
+                    updateLanguagePairSummary()
+                }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // Slot 3 change listener
+        binding.spinnerSlot3Language.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val selected = allLanguages[position]
+                val pairs = appPreferences.getLanguagePairs().toMutableList()
+                if (pairs.size > 2 && pairs[2].sourceCode != selected.code) {
+                    val oldCode = pairs[2].sourceCode
+                    pairs[2] = com.bangla.translator.data.LanguagePairPreference(selected.code, appPreferences.targetLanguageCode)
+                    appPreferences.saveLanguagePairs(pairs)
+                    val remaining = appPreferences.activeSourceLanguages
+                    if (!remaining.contains(oldCode)) {
+                        val oldMeta = SupportedLanguages.findByCode(oldCode)
+                        TranslationEngine.deleteModel(oldMeta.mlKitCode)
+                    }
+                    TranslationEngine.prepareModelIfNeeded(sourceLangCode = selected.mlKitCode)
+                    updateLanguagePairSummary()
+                }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // Target language change listener
+        binding.spinnerTargetLanguage.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val selected = targetLanguages[position]
+                if (selected.code != appPreferences.targetLanguageCode) {
+                    appPreferences.targetLanguageCode = selected.code
+                    val pairs = appPreferences.getLanguagePairs().map {
+                        com.bangla.translator.data.LanguagePairPreference(it.sourceCode, selected.code)
+                    }
+                    appPreferences.saveLanguagePairs(pairs)
+                    updateLanguagePairSummary()
+                }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // Add Language Pair Button
+        binding.btnAddLanguagePair.setOnClickListener {
+            showAddLanguagePairDialog()
+        }
+
+        // Remove buttons (purges local model pack from storage & RAM)
+        binding.btnRemoveSlot2.setOnClickListener {
+            val pairs = appPreferences.getLanguagePairs()
+            if (pairs.size > 1) {
+                val removedCode = pairs[1].sourceCode
+                appPreferences.removeLanguagePair(removedCode)
+                val remainingCodes = appPreferences.activeSourceLanguages
+                if (!remainingCodes.contains(removedCode)) {
+                    val langMeta = SupportedLanguages.findByCode(removedCode)
+                    TranslationEngine.deleteModel(langMeta.mlKitCode) {
+                        runOnUiThread {
+                            Toast.makeText(this@MainActivity, "Deleted \${langMeta.name} pack (~30MB). Storage & RAM freed.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+                refreshLanguageSlotsUI()
+            }
+        }
+
+        binding.btnRemoveSlot3.setOnClickListener {
+            val pairs = appPreferences.getLanguagePairs()
+            if (pairs.size > 2) {
+                val removedCode = pairs[2].sourceCode
+                appPreferences.removeLanguagePair(removedCode)
+                val remainingCodes = appPreferences.activeSourceLanguages
+                if (!remainingCodes.contains(removedCode)) {
+                    val langMeta = SupportedLanguages.findByCode(removedCode)
+                    TranslationEngine.deleteModel(langMeta.mlKitCode) {
+                        runOnUiThread {
+                            Toast.makeText(this@MainActivity, "Deleted \${langMeta.name} pack (~30MB). Storage & RAM freed.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+                refreshLanguageSlotsUI()
+            }
+        }
+
+        updateLanguagePairSummary()
+    }
+
+    private fun refreshLanguageSlotsUI() {
+        val pairs = appPreferences.getLanguagePairs()
+        val allLanguages = SupportedLanguages.ALL
+
+        // Slot 1
+        if (pairs.isNotEmpty()) {
+            val idx = allLanguages.indexOfFirst { it.code == pairs[0].sourceCode }.coerceAtLeast(0)
+            if (binding.spinnerSourceLanguage.selectedItemPosition != idx) {
+                binding.spinnerSourceLanguage.setSelection(idx)
+            }
+        }
+
+        // Slot 2
+        if (pairs.size > 1) {
+            binding.layoutSlot2.visibility = View.VISIBLE
+            val idx = allLanguages.indexOfFirst { it.code == pairs[1].sourceCode }.coerceAtLeast(0)
+            if (binding.spinnerSlot2Language.selectedItemPosition != idx) {
+                binding.spinnerSlot2Language.setSelection(idx)
+            }
+        } else {
+            binding.layoutSlot2.visibility = View.GONE
+        }
+
+        // Slot 3
+        if (pairs.size > 2) {
+            binding.layoutSlot3.visibility = View.VISIBLE
+            val idx = allLanguages.indexOfFirst { it.code == pairs[2].sourceCode }.coerceAtLeast(0)
+            if (binding.spinnerSlot3Language.selectedItemPosition != idx) {
+                binding.spinnerSlot3Language.setSelection(idx)
+            }
+        } else {
+            binding.layoutSlot3.visibility = View.GONE
+        }
+
+        binding.btnAddLanguagePair.visibility = if (pairs.size < 3) View.VISIBLE else View.GONE
+        binding.tvActivePairsBadge.text = "\${pairs.size}/3 Active"
+        updateLanguagePairSummary()
+    }
+
+    private fun showAddLanguagePairDialog() {
+        val currentPairs = appPreferences.getLanguagePairs()
+        val available = SupportedLanguages.ALL.filter { lang ->
+            currentPairs.none { it.sourceCode == lang.code }
+        }
+
+        if (available.isEmpty()) {
+            Toast.makeText(this, "All available languages are already configured.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val items = available.map { "\${it.name} (\${it.nativeName})" }.toTypedArray()
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Add Language Pair (Slot #\${currentPairs.size + 1})")
+            .setItems(items) { _, which ->
+                val chosen = available[which]
+                appPreferences.addLanguagePair(chosen.code, appPreferences.targetLanguageCode)
+                TranslationEngine.prepareModelIfNeeded(
+                    sourceLangCode = chosen.mlKitCode,
+                    onSuccess = {
+                        runOnUiThread {
+                            refreshLanguageSlotsUI()
+                            Toast.makeText(this@MainActivity, "\${chosen.name} pair added & model ready!", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+                refreshLanguageSlotsUI()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun updateLanguagePairSummary() {
+        val pairs = appPreferences.getLanguagePairs()
+        val summary = pairs.joinToString(", ") {
+            val src = SupportedLanguages.findByCode(it.sourceCode)
+            val trg = SupportedLanguages.findByCode(it.targetCode)
+            "\${src.nativeName} → \${trg.name}"
+        }
+        binding.tvActivePairSummary.text = "Active Pairs (\${pairs.size}/3): \$summary"
+        binding.tvModelDescription.text = "Downloads ~30MB Google ML Kit model per language for 100% offline WhatsApp translations."
+    }
+
+    private fun setupListeners() {
+        // Accessibility Service Button
+        binding.btnEnableAccessibility.setOnClickListener {
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            startActivity(intent)
+        }
+
+        // Translation Model Download Button
+        binding.btnDownloadModel.setOnClickListener {
+            binding.pbModelDownload.visibility = View.VISIBLE
+            binding.btnDownloadModel.isEnabled = false
+            TranslationEngine.prepareModelIfNeeded(
+                onSuccess = {
+                    runOnUiThread {
+                        binding.pbModelDownload.visibility = View.GONE
+                        binding.btnDownloadModel.isEnabled = true
+                        val src = SupportedLanguages.findByCode(appPreferences.sourceLanguageCode)
+                        Toast.makeText(this, "\${src.name} model ready for offline use!", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onFailure = { error ->
+                    runOnUiThread {
+                        binding.pbModelDownload.visibility = View.GONE
+                        binding.btnDownloadModel.isEnabled = true
+                        Toast.makeText(this, "Failed to download model: \${error.localizedMessage}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            )
+        }
+
+        // Translation Model Update Button
+        binding.btnUpdateModel.setOnClickListener {
+            binding.pbModelDownload.visibility = View.VISIBLE
+            binding.btnUpdateModel.isEnabled = false
+            val activePairs = appPreferences.getLanguagePairs()
+            if (activePairs.isEmpty()) {
+                binding.pbModelDownload.visibility = View.GONE
+                binding.btnUpdateModel.isEnabled = true
+                Toast.makeText(this, "No active language models to update.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            var completedCount = 0
+            for (pair in activePairs) {
+                val meta = SupportedLanguages.findByCode(pair.sourceCode)
+                TranslationEngine.prepareModelIfNeeded(
+                    sourceLangCode = meta.mlKitCode,
+                    onSuccess = {
+                        completedCount++
+                        if (completedCount >= activePairs.size) {
+                            runOnUiThread {
+                                binding.pbModelDownload.visibility = View.GONE
+                                binding.btnUpdateModel.isEnabled = true
+                                appPreferences.isModelUpdateAvailable = false
+                                appPreferences.modelVersion = "v2.4"
+                                binding.tvModelUpdateTitle.text = "✅ Models Up to Date (v2.4 Latest)"
+                                binding.tvModelUpdateDesc.text = "Latest neural weights and enriched dictionaries are active."
+                                binding.btnUpdateModel.visibility = View.GONE
+                                Toast.makeText(this@MainActivity, "All models successfully updated to v2.4!", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    onFailure = { error ->
+                        runOnUiThread {
+                            binding.pbModelDownload.visibility = View.GONE
+                            binding.btnUpdateModel.isEnabled = true
+                            Toast.makeText(this@MainActivity, "Update failed: \${error.localizedMessage}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                )
+            }
+        }
+
+        // Translation Model Delete Button
+        binding.btnDeleteModel.setOnClickListener {
+            TranslationEngine.deleteModel {
+                runOnUiThread {
+                    Toast.makeText(this, "On-device model removed.", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        // Overlay Feature Switch
+        binding.switchOverlay.isChecked = appPreferences.isOverlayEnabled
+        binding.switchOverlay.setOnCheckedChangeListener { _, isChecked ->
+            appPreferences.isOverlayEnabled = isChecked
+        }
+
+        // Notification Feature Switch
+        binding.switchNotifications.isChecked = appPreferences.isNotificationTranslationEnabled
+        binding.switchNotifications.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked) {
+                handleEnableNotifications()
+            } else {
+                appPreferences.isNotificationTranslationEnabled = false
+                binding.btnEnableNotificationAccess.visibility = View.GONE
+            }
+        }
+
+        // Notification Access Button
+        binding.btnEnableNotificationAccess.setOnClickListener {
+            val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+            startActivity(intent)
+        }
+
+        // Live Auto-Detect Language Prompt Switch
+        binding.switchAutoDetectPrompt.isChecked = appPreferences.isAutoDetectPromptEnabled
+        binding.switchAutoDetectPrompt.setOnCheckedChangeListener { _, isChecked ->
+            appPreferences.isAutoDetectPromptEnabled = isChecked
+        }
+
+        // Add Ignored Language Button
+        binding.btnAddIgnoredLanguage.setOnClickListener {
+            showAddIgnoredLanguageDialog()
+        }
+
+        refreshIgnoredLanguagesUI()
+    }
+
+    private fun refreshIgnoredLanguagesUI() {
+        val ignored = appPreferences.ignoredLanguages.toList()
+        binding.layoutIgnoredLanguages.removeAllViews()
+
+        if (ignored.isEmpty()) {
+            val emptyTv = android.widget.TextView(this).apply {
+                text = "No languages currently ignored."
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
+                textSize = 12f
+            }
+            binding.layoutIgnoredLanguages.addView(emptyTv)
+            return
+        }
+
+        for (code in ignored) {
+            val item = SupportedLanguages.findByCode(code)
+            val chip = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(24, 12, 24, 12)
+                setBackgroundResource(R.drawable.bg_overlay_incoming)
+                val lp = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(0, 6, 0, 6)
+                }
+                layoutParams = lp
+            }
+
+            val tvName = android.widget.TextView(this).apply {
+                text = "🚫 \${item.name} (\${item.nativeName}) [\${code.uppercase()}]"
+                setTextColor(android.graphics.Color.WHITE)
+                textSize = 12f
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+
+            val btnRemove = android.widget.TextView(this).apply {
+                text = "✕ Unignore"
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.whatsapp_green))
+                textSize = 11f
+                paint.isFakeBoldText = true
+                setPadding(16, 4, 16, 4)
+                setOnClickListener {
+                    appPreferences.removeIgnoredLanguage(code)
+                    refreshIgnoredLanguagesUI()
+                    Toast.makeText(this@MainActivity, "Unignored \${item.name}", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            chip.addView(tvName)
+            chip.addView(btnRemove)
+            binding.layoutIgnoredLanguages.addView(chip)
+        }
+    }
+
+    private fun showAddIgnoredLanguageDialog() {
+        val currentIgnored = appPreferences.ignoredLanguages
+        val available = SupportedLanguages.ALL.filter { !currentIgnored.contains(it.code) }
+
+        if (available.isEmpty()) {
+            Toast.makeText(this, "All languages are already in the ignore list.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val items = available.map { "\${it.name} (\${it.nativeName})" }.toTypedArray()
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Add Language to Ignore List")
+            .setItems(items) { _, which ->
+                val chosen = available[which]
+                appPreferences.addIgnoredLanguage(chosen.code)
+                refreshIgnoredLanguagesUI()
+                Toast.makeText(this, "Ignored \${chosen.name}. Live detection will not prompt for it.", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun handleEnableNotifications() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                return
+            }
+        }
+        appPreferences.isNotificationTranslationEnabled = true
+        checkNotificationListenerStatus()
+    }
+
+    private fun observeModelState() {
+        lifecycleScope.launch {
+            TranslationEngine.modelState.collectLatest { state ->
+                when (state) {
+                    is ModelDownloadState.Ready -> {
+                        binding.tvModelStatus.text = "On-Device Model Ready (~30MB)"
+                        binding.tvModelStatus.setTextColor(ContextCompat.getColor(this@MainActivity, R.color.status_active))
+                        binding.btnDownloadModel.visibility = View.GONE
+                        binding.btnDeleteModel.visibility = View.VISIBLE
+                        binding.pbModelDownload.visibility = View.GONE
+                    }
+                    is ModelDownloadState.Downloading -> {
+                        binding.tvModelStatus.text = "Downloading Model (~30MB)..."
+                        binding.tvModelStatus.setTextColor(ContextCompat.getColor(this@MainActivity, R.color.accent))
+                        binding.btnDownloadModel.visibility = View.VISIBLE
+                        binding.btnDownloadModel.isEnabled = false
+                        binding.btnDeleteModel.visibility = View.GONE
+                        binding.pbModelDownload.visibility = View.VISIBLE
+                    }
+                    is ModelDownloadState.NotDownloaded -> {
+                        binding.tvModelStatus.text = "Download Needed for Offline Use"
+                        binding.tvModelStatus.setTextColor(ContextCompat.getColor(this@MainActivity, R.color.status_inactive))
+                        binding.btnDownloadModel.visibility = View.VISIBLE
+                        binding.btnDownloadModel.isEnabled = true
+                        binding.btnDeleteModel.visibility = View.GONE
+                        binding.pbModelDownload.visibility = View.GONE
+                    }
+                    is ModelDownloadState.Error -> {
+                        binding.tvModelStatus.text = "Download Error: \${state.message}"
+                        binding.tvModelStatus.setTextColor(ContextCompat.getColor(this@MainActivity, R.color.status_inactive))
+                        binding.btnDownloadModel.visibility = View.VISIBLE
+                        binding.btnDownloadModel.isEnabled = true
+                        binding.btnDeleteModel.visibility = View.GONE
+                        binding.pbModelDownload.visibility = View.GONE
+                    }
+                }
+            }
+        }
+    }
+
+    private fun updateAccessibilityStatus() {
+        val isEnabled = isAccessibilityServiceEnabled(this, BanglaAccessibilityService::class.java)
+        if (isEnabled) {
+            binding.tvAccessibilityStatus.text = getString(R.string.accessibility_status_enabled)
+            binding.tvAccessibilityStatus.setTextColor(ContextCompat.getColor(this, R.color.status_active))
+            binding.btnEnableAccessibility.visibility = View.GONE
+        } else {
+            binding.tvAccessibilityStatus.text = getString(R.string.accessibility_status_disabled)
+            binding.tvAccessibilityStatus.setTextColor(ContextCompat.getColor(this, R.color.status_inactive))
+            binding.btnEnableAccessibility.visibility = View.VISIBLE
+        }
+    }
+
+    private fun updateModelUpdateBannerUI() {
+        if (appPreferences.isModelUpdateAvailable) {
+            binding.layoutModelUpdateBanner.visibility = View.VISIBLE
+            binding.tvModelUpdateTitle.text = "🔔 Model Update Available (v2.4)"
+            binding.tvModelUpdateDesc.text = "Improved French & Spanish disambiguation, richer vocabulary dictionaries, and faster on-device inference."
+            binding.btnUpdateModel.visibility = View.VISIBLE
+            binding.btnUpdateModel.isEnabled = true
+            binding.btnUpdateModel.text = "Update All Models (v2.4)"
+        } else {
+            binding.layoutModelUpdateBanner.visibility = View.VISIBLE
+            binding.tvModelUpdateTitle.text = "✅ Models Up to Date (v2.4 Latest)"
+            binding.tvModelUpdateDesc.text = "Latest neural weights and enriched dictionaries are active."
+            binding.btnUpdateModel.visibility = View.GONE
+        }
+    }
+
+    private fun checkNotificationListenerStatus() {
+        if (!appPreferences.isNotificationTranslationEnabled) {
+            binding.btnEnableNotificationAccess.visibility = View.GONE
+            return
+        }
+        val isEnabled = isNotificationServiceEnabled(this)
+        if (isEnabled) {
+            binding.btnEnableNotificationAccess.visibility = View.GONE
+        } else {
+            binding.btnEnableNotificationAccess.visibility = View.VISIBLE
+        }
+    }
+
+    private fun isAccessibilityServiceEnabled(context: Context, service: Class<*>): Boolean {
+        val expectedComponentName = ComponentName(context, service)
+        val enabledServicesSetting = Settings.Secure.getString(
+            context.contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+
+        val colonSplitter = TextUtils.SimpleStringSplitter(':')
+        colonSplitter.setString(enabledServicesSetting)
+
+        while (colonSplitter.hasNext()) {
+            val componentNameString = colonSplitter.next()
+            val enabledComponent = ComponentName.unflattenFromString(componentNameString)
+            if (enabledComponent != null && enabledComponent == expectedComponentName) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun isNotificationServiceEnabled(context: Context): Boolean {
+        val pkgName = context.packageName
+        val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
+        if (!flat.isNullOrEmpty()) {
+            val names = flat.split(":").toTypedArray()
+            for (name in names) {
+                val cn = ComponentName.unflattenFromString(name)
+                if (cn != null && TextUtils.equals(pkgName, cn.packageName)) {
+                    return true
+                }
+            }
+        }
+        return false
     }
 }
 `

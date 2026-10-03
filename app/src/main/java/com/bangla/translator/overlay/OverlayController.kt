@@ -112,6 +112,8 @@ class OverlayController(
             val tvBadge = overlayView.findViewById<TextView>(R.id.tvBadgeText)
             val tvLabel = overlayView.findViewById<TextView>(R.id.tvLanguageLabel)
             val tvTranslated = overlayView.findViewById<TextView>(R.id.tvTranslatedText)
+            val sv = overlayView.findViewById<ScrollView>(R.id.svTranslatedText)
+            val tvClose = overlayView.findViewById<TextView>(R.id.tvCloseExpanded)
 
             tvTranslated.text = translatedText
             tvLabel.text = languagePairLabel
@@ -135,6 +137,7 @@ class OverlayController(
             ivBadge.setColorFilter(labelColor)
             tvBadge.setTextColor(labelColor)
             tvLabel.setTextColor(labelColor)
+            tvClose?.setTextColor(labelColor)
 
             // Click to expand
             llCollapsed.setOnClickListener {
@@ -142,7 +145,10 @@ class OverlayController(
             }
 
             // Click to collapse
-            llExpanded.setOnClickListener {
+            tvClose?.setOnClickListener {
+                collapseOverlay(displayKey)
+            }
+            tvLabel.setOnClickListener {
                 collapseOverlay(displayKey)
             }
 
@@ -168,10 +174,30 @@ class OverlayController(
             }
 
             if (isExpanded) {
+                val spaceBelow = bottomLimit - (targetBounds.bottom + gapPx)
+                val spaceAbove = (targetBounds.top - gapPx) - statusBarInsetPx
+                val availableSpace = maxOf(spaceBelow, spaceAbove)
+
+                // Capped maximum height for the expanded translation bubble so long messages scroll vertically
+                val maxBubbleHeight = (screenH * 0.45f).toInt()
+                    .coerceAtMost((availableSpace - (8 * density).toInt()).coerceAtLeast((180 * density).toInt()))
+
+                sv?.layoutParams?.height = ViewGroup.LayoutParams.WRAP_CONTENT
                 overlayView.measure(
                     View.MeasureSpec.makeMeasureSpec(bubbleWidth, View.MeasureSpec.EXACTLY),
                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
                 )
+
+                if (overlayView.measuredHeight > maxBubbleHeight) {
+                    val overhead = (overlayView.measuredHeight - (sv?.measuredHeight ?: 0)).coerceAtLeast((28 * density).toInt())
+                    val scrollHeight = (maxBubbleHeight - overhead).coerceAtLeast((120 * density).toInt())
+                    sv?.layoutParams?.height = scrollHeight
+                    overlayView.measure(
+                        View.MeasureSpec.makeMeasureSpec(bubbleWidth, View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                    )
+                }
+
                 measuredWidth = bubbleWidth
                 measuredHeight = overlayView.measuredHeight
 
@@ -181,7 +207,7 @@ class OverlayController(
                 posX = calculatedX
 
                 // Vertical placement for expanded bubble: prefer below; if too close to bottom limit, place above!
-                posY = if (targetBounds.bottom + gapPx + measuredHeight <= bottomLimit) {
+                posY = if (spaceBelow >= measuredHeight || spaceBelow >= spaceAbove) {
                     targetBounds.bottom + gapPx
                 } else {
                     (targetBounds.top - measuredHeight - gapPx).coerceAtLeast(statusBarInsetPx)
@@ -386,12 +412,32 @@ class OverlayController(
         val posX: Int
         val posY: Int
 
+        val sv = active.view.findViewById<ScrollView>(R.id.svTranslatedText)
         if (isExpanded) {
-            // Adopt EXACT WhatsApp bubble width
+            val spaceBelow = bottomLimit - (active.currentBounds.bottom + gapPx)
+            val spaceAbove = (active.currentBounds.top - gapPx) - statusBarInsetPx
+            val availableSpace = maxOf(spaceBelow, spaceAbove)
+
+            // Capped maximum height for the expanded translation bubble so long messages scroll vertically
+            val maxBubbleHeight = (screenH * 0.38f).toInt()
+                .coerceAtMost((availableSpace - (8 * density).toInt()).coerceAtLeast((140 * density).toInt()))
+
+            sv?.layoutParams?.height = ViewGroup.LayoutParams.WRAP_CONTENT
             active.view.measure(
                 View.MeasureSpec.makeMeasureSpec(bubbleWidth, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
             )
+
+            if (active.view.measuredHeight > maxBubbleHeight) {
+                val overhead = (active.view.measuredHeight - (sv?.measuredHeight ?: 0)).coerceAtLeast((28 * density).toInt())
+                val scrollHeight = (maxBubbleHeight - overhead).coerceAtLeast((90 * density).toInt())
+                sv?.layoutParams?.height = scrollHeight
+                active.view.measure(
+                    View.MeasureSpec.makeMeasureSpec(bubbleWidth, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                )
+            }
+
             measuredWidth = bubbleWidth
             measuredHeight = active.view.measuredHeight
 
@@ -400,13 +446,16 @@ class OverlayController(
             if (calculatedX < marginPx) calculatedX = marginPx
             posX = calculatedX
 
-            posY = if (active.currentBounds.bottom + gapPx + measuredHeight <= bottomLimit) {
+            posY = if (spaceBelow >= measuredHeight || spaceBelow >= spaceAbove) {
                 active.currentBounds.bottom + gapPx
             } else {
                 (active.currentBounds.top - measuredHeight - gapPx).coerceAtLeast(statusBarInsetPx)
             }
             active.view.elevation = 24 * density
         } else {
+            // Collapsed: Reset ScrollView height
+            sv?.layoutParams?.height = ViewGroup.LayoutParams.WRAP_CONTENT
+
             // Collapsed: middle of the side away from outer edge of screen
             active.view.measure(
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
