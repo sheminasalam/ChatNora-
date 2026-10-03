@@ -1539,11 +1539,20 @@ class OverlayController(private val context: Context, private val windowManager:
 
                 for (pair in currentPairs) {
                     val pairMeta = com.bangla.translator.data.SupportedLanguages.findByCode(pair.sourceCode)
-                    val btnOption = Button(context).apply {
+                    val btnOption = TextView(context).apply {
                         text = "Replace \${pairMeta.name} (\${pairMeta.nativeName}) → English"
                         textSize = 11f
                         setTextColor(Color.WHITE)
                         setBackgroundColor(Color.parseColor("#1F2C34"))
+                        setPadding((10 * density).toInt(), (8 * density).toInt(), (10 * density).toInt(), (8 * density).toInt())
+                        gravity = Gravity.CENTER
+                        paint.isFakeBoldText = true
+                        isClickable = true
+                        isFocusable = true
+                        val lpBtn = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                            setMargins(0, (4 * density).toInt(), 0, (4 * density).toInt())
+                        }
+                        layoutParams = lpBtn
                         setOnClickListener {
                             dismissLanguageProposal()
                             onReplacePair(pair.sourceCode)
@@ -1552,12 +1561,20 @@ class OverlayController(private val context: Context, private val windowManager:
                     card.addView(btnOption)
                 }
             } else {
-                val btnDownload = Button(context).apply {
+                val btnDownload = TextView(context).apply {
                     text = "Download \${languageItem.name} Pack (~30MB)"
                     textSize = 12f
                     setTextColor(Color.WHITE)
                     setBackgroundColor(Color.parseColor("#25D366"))
+                    setPadding((12 * density).toInt(), (10 * density).toInt(), (12 * density).toInt(), (10 * density).toInt())
+                    gravity = Gravity.CENTER
                     paint.isFakeBoldText = true
+                    isClickable = true
+                    isFocusable = true
+                    val lpBtn = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                        setMargins(0, (6 * density).toInt(), 0, (4 * density).toInt())
+                    }
+                    layoutParams = lpBtn
                     setOnClickListener {
                         dismissLanguageProposal()
                         onDownloadAndAdd()
