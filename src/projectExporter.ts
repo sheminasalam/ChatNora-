@@ -2015,6 +2015,7 @@ class NotificationTranslationService : NotificationListenerService() {
   'app/src/main/java/com/bangla/translator/MainActivity.kt': `package com.bangla.translator
 
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.provider.Settings
 import android.view.View
@@ -2028,7 +2029,7 @@ import com.bangla.translator.data.SupportedLanguages
 import com.bangla.translator.databinding.ActivityMainBinding
 import com.bangla.translator.translation.TranslationEngine
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceChangeListener {
     private lateinit var binding: ActivityMainBinding
     private lateinit var appPreferences: AppPreferences
 
@@ -2043,8 +2044,7 @@ class MainActivity : AppCompatActivity() {
         val trgAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, SupportedLanguages.TARGET_LANGUAGES)
         binding.spinnerTargetLanguage.adapter = trgAdapter
 
-        binding.spinnerSourceLanguage.setSelection(SupportedLanguages.ALL.indexOfFirst { it.code == appPreferences.sourceLanguageCode }.coerceAtLeast(0))
-        binding.spinnerTargetLanguage.setSelection(SupportedLanguages.TARGET_LANGUAGES.indexOfFirst { it.code == appPreferences.targetLanguageCode }.coerceAtLeast(0))
+        refreshAllUI()
 
         binding.spinnerSourceLanguage.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
@@ -2094,6 +2094,32 @@ class MainActivity : AppCompatActivity() {
             TranslationEngine.deleteModel {
                 runOnUiThread { Toast.makeText(this, "Model deleted.", Toast.LENGTH_SHORT).show() }
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        appPreferences.registerListener(this)
+        refreshAllUI()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        appPreferences.unregisterListener(this)
+    }
+
+    override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
+        runOnUiThread { refreshAllUI() }
+    }
+
+    private fun refreshAllUI() {
+        val srcIdx = SupportedLanguages.ALL.indexOfFirst { it.code == appPreferences.sourceLanguageCode }.coerceAtLeast(0)
+        if (binding.spinnerSourceLanguage.selectedItemPosition != srcIdx) {
+            binding.spinnerSourceLanguage.setSelection(srcIdx)
+        }
+        val trgIdx = SupportedLanguages.TARGET_LANGUAGES.indexOfFirst { it.code == appPreferences.targetLanguageCode }.coerceAtLeast(0)
+        if (binding.spinnerTargetLanguage.selectedItemPosition != trgIdx) {
+            binding.spinnerTargetLanguage.setSelection(trgIdx)
         }
     }
 }

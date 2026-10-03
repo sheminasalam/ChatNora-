@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -27,7 +28,7 @@ import com.bangla.translator.translation.TranslationEngine
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceChangeListener {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var appPreferences: AppPreferences
@@ -62,11 +63,53 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        appPreferences.registerListener(this)
+        refreshAllUI()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        appPreferences.unregisterListener(this)
+    }
+
+    override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
+        runOnUiThread {
+            refreshAllUI()
+        }
+    }
+
+    /**
+     * Completely synchronizes all on-screen UI components with the current AppPreferences.
+     * Called whenever the user returns to the app (onResume) or when preferences are modified in the background.
+     */
+    private fun refreshAllUI() {
         updateAccessibilityStatus()
         checkNotificationListenerStatus()
         TranslationEngine.checkModelAvailability()
         TranslationEngine.purgeInactiveModels(appPreferences.activeSourceLanguages)
         updateModelUpdateBannerUI()
+
+        // Sync feature switches
+        if (binding.switchOverlay.isChecked != appPreferences.isOverlayEnabled) {
+            binding.switchOverlay.isChecked = appPreferences.isOverlayEnabled
+        }
+        if (binding.switchNotifications.isChecked != appPreferences.isNotificationTranslationEnabled) {
+            binding.switchNotifications.isChecked = appPreferences.isNotificationTranslationEnabled
+        }
+        if (binding.switchAutoDetectPrompt.isChecked != appPreferences.isAutoDetectPromptEnabled) {
+            binding.switchAutoDetectPrompt.isChecked = appPreferences.isAutoDetectPromptEnabled
+        }
+
+        // Sync Target Language selection
+        val targetLanguages = SupportedLanguages.TARGET_LANGUAGES
+        val targetIdx = targetLanguages.indexOfFirst { it.code == appPreferences.targetLanguageCode }.coerceAtLeast(0)
+        if (binding.spinnerTargetLanguage.selectedItemPosition != targetIdx) {
+            binding.spinnerTargetLanguage.setSelection(targetIdx)
+        }
+
+        // Refresh all dynamic widgets
+        refreshLanguageSlotsUI()
+        refreshIgnoredLanguagesUI()
     }
 
     private fun setupLanguageSpinners() {
@@ -221,14 +264,18 @@ class MainActivity : AppCompatActivity() {
         // Slot 1
         if (pairs.isNotEmpty()) {
             val idx = allLanguages.indexOfFirst { it.code == pairs[0].sourceCode }.coerceAtLeast(0)
-            binding.spinnerSourceLanguage.setSelection(idx)
+            if (binding.spinnerSourceLanguage.selectedItemPosition != idx) {
+                binding.spinnerSourceLanguage.setSelection(idx)
+            }
         }
 
         // Slot 2
         if (pairs.size > 1) {
             binding.layoutSlot2.visibility = View.VISIBLE
             val idx = allLanguages.indexOfFirst { it.code == pairs[1].sourceCode }.coerceAtLeast(0)
-            binding.spinnerSlot2Language.setSelection(idx)
+            if (binding.spinnerSlot2Language.selectedItemPosition != idx) {
+                binding.spinnerSlot2Language.setSelection(idx)
+            }
         } else {
             binding.layoutSlot2.visibility = View.GONE
         }
@@ -237,7 +284,9 @@ class MainActivity : AppCompatActivity() {
         if (pairs.size > 2) {
             binding.layoutSlot3.visibility = View.VISIBLE
             val idx = allLanguages.indexOfFirst { it.code == pairs[2].sourceCode }.coerceAtLeast(0)
-            binding.spinnerSlot3Language.setSelection(idx)
+            if (binding.spinnerSlot3Language.selectedItemPosition != idx) {
+                binding.spinnerSlot3Language.setSelection(idx)
+            }
         } else {
             binding.layoutSlot3.visibility = View.GONE
         }
