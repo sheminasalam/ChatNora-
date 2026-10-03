@@ -55,7 +55,7 @@ object LanguageDetector {
     init {
         try {
             mlKitLanguageIdentifier = LanguageIdentification.getClient()
-        } catch (_: Exception) {}
+        } catch (e: Exception) {}
     }
 
     /**

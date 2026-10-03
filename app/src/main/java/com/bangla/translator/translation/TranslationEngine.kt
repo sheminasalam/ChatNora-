@@ -179,7 +179,7 @@ object TranslationEngine {
         for ((_, translator) in activeTranslators) {
             try {
                 translator.close()
-            } catch (_: Exception) {}
+            } catch (e: Exception) {}
         }
         activeTranslators.clear()
     }

@@ -106,7 +106,7 @@ class WhatsAppMessageScanner(
                         if (tempBounds.width() > 15 && tempBounds.height() > 15 &&
                             tempBounds.intersects(0, 0, screenBounds.width(), screenBounds.height())
                         ) {
-                            val candidateText = node.text?.toString()
+                            val candidateText = (node.text ?: node.contentDescription)?.toString()
 
                             if (!candidateText.isNullOrBlank() && !node.isEditable && !isNonMessageText(node, candidateText)) {
                                 if (!isInsideQuotedMessage(node)) {
@@ -140,7 +140,7 @@ class WhatsAppMessageScanner(
                                                 currentParent = nextParent
                                                 depth++
                                             }
-                                        } catch (_: Exception) {
+                                        } catch (e: Exception) {
                                         } finally {
                                             currentParent?.recycle()
                                         }

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Smartphone,
   ShieldCheck,
@@ -334,7 +334,10 @@ export const ALL_LANGUAGES: SupportedLangMeta[] = [
   { code: 'zh', label: 'Chinese', nativeName: '中文', flag: '🇨🇳' },
   { code: 'ko', label: 'Korean', nativeName: '한국어', flag: '🇰🇷' },
   { code: 'ur', label: 'Urdu', nativeName: 'اردو', flag: '🇵🇰' },
-  { code: 'tr', label: 'Turkish', nativeName: 'Türkçe', flag: '🇹🇷' }
+  { code: 'tr', label: 'Turkish', nativeName: 'Türkçe', flag: '🇹🇷' },
+  { code: 'ta', label: 'Tamil', nativeName: 'தமிழ்', flag: '🇮🇳' },
+  { code: 'te', label: 'Telugu', nativeName: 'తెలుగు', flag: '🇮🇳' },
+  { code: 'mr', label: 'Marathi', nativeName: 'मराठी', flag: '🇮🇳' }
 ];
 
 export interface LanguagePair {
@@ -362,7 +365,15 @@ export function detectMessageLanguage(text: string): SupportedLangMeta | null {
   if (/[\u0980-\u09FF]/.test(trimmed)) {
     return ALL_LANGUAGES.find(l => l.code === 'bn') || null;
   }
-  // Hindi (Devanagari) U+0900..U+097F
+  // Tamil U+0B80..U+0BFF
+  if (/[\u0B80-\u0BFF]/.test(trimmed)) {
+    return ALL_LANGUAGES.find(l => l.code === 'ta') || null;
+  }
+  // Telugu U+0C00..U+0C7F
+  if (/[\u0C00-\u0C7F]/.test(trimmed)) {
+    return ALL_LANGUAGES.find(l => l.code === 'te') || null;
+  }
+  // Hindi / Devanagari U+0900..U+097F
   if (/[\u0900-\u097F]/.test(trimmed)) {
     return ALL_LANGUAGES.find(l => l.code === 'hi') || null;
   }
@@ -413,7 +424,7 @@ export function detectMessageLanguage(text: string): SupportedLangMeta | null {
 export default function App() {
   const [activeTab, setActiveTab] = useState<'simulator' | 'tester' | 'code' | 'audit' | 'scenarios' | 'download'>('download');
   const [isDownloadingZip, setIsDownloadingZip] = useState<boolean>(false);
-  const [activeChat, setActiveChat] = useState<'chatA' | 'chatB' | 'home'>('chatA');
+  const [activeChat, setActiveChat] = useState<'chatA' | 'chatB' | 'chatHindi' | 'chatTamil' | 'chatFrench' | 'home'>('chatA');
   const [sessionGen, setSessionGen] = useState<number>(10);
   const [overlayEnabled, setOverlayEnabled] = useState<boolean>(true);
   const [scrollY, setScrollY] = useState<number>(0);
@@ -478,6 +489,9 @@ export default function App() {
     setDynamicMessages(multiLangChats[lang].messages);
     // Un-dismiss to ensure detection triggers for testing
     setDismissedPacks(prev => prev.filter(p => p !== lang));
+    if (!activePacks.includes(lang)) {
+      setShowDetectedLangModal(true);
+    }
   };
 
   // In-app feedback toast
@@ -595,6 +609,7 @@ export default function App() {
       ar: { text: 'مرحباً يا أخي، كيف حالك وأين أنت الآن؟', sender: 'Tariq', translated: 'Hello my brother, how are you and where are you now?' },
       hi: { text: 'नमस्ते भाई, आप कैसे हैं और कहाँ जा रहे हैं?', sender: 'Rohit', translated: 'Hello brother, how are you and where are you going?' },
       ja: { text: 'こんにちは、今日のミーティングは何時ですか？', sender: 'Kenji', translated: 'Hello, what time is the meeting today?' },
+      ta: { text: 'வணக்கம் நண்பா, எப்படி இருக்கிறீர்கள்?', sender: 'Murugan', translated: 'Hello friend, how are you?' },
       bn: { text: 'তুমি কোথায় আছো এখন? জরুরি কথা ছিল।', sender: 'Rafiq', translated: 'Where are you right now? Had an urgent matter.' },
       en: { text: 'Hey, are we still meeting today at 4 PM?', sender: 'David' }
     };
@@ -617,6 +632,10 @@ export default function App() {
 
     const isDownloaded = activePacks.includes(langCode);
     const isEnglish = langCode === 'en';
+
+    if (!isDownloaded && !isEnglish) {
+      setShowDetectedLangModal(true);
+    }
 
     if (isEnglish) {
       setStatusLog(prev => [
@@ -725,22 +744,40 @@ export default function App() {
   }), []);
 
   // Chat messages mock
-  const chatMessages: Record<'chatA' | 'chatB', MessageBubble[]> = useMemo(() => ({
+  const chatMessages: Record<'chatA' | 'chatB' | 'chatHindi' | 'chatTamil' | 'chatFrench', MessageBubble[]> = useMemo(() => ({
     chatA: dynamicMessages,
     chatB: [
       { id: 'm7', sender: 'Tanvir (Chittagong)', text: 'ভাই আপনার সাথে জরুরি কথা ছিল।', isMe: false, time: '11:02 AM', translated: 'Brother, I had an urgent matter to discuss with you.', isBengali: true },
       { id: 'm8', sender: 'Me', text: 'Sure Tanvir, what is it about?', isMe: true, time: '11:03 AM', isBengali: false },
       { id: 'm9', sender: 'Tanvir (Chittagong)', text: 'তুমি কোথায় আছো এখন?', isMe: false, time: '11:04 AM', translated: 'Where are you right now?', isBengali: true },
       { id: 'm10', sender: 'Tanvir (Chittagong)', text: 'https://example.com/report.pdf এই লিংকটা দেখুন।', isMe: false, time: '11:05 AM', translated: 'Check this link out.', isBengali: true },
+    ],
+    chatHindi: [
+      { id: 'hi1', sender: 'Rohit (Delhi)', text: 'नमस्ते भाई, आप कैसे हैं और कहाँ जा रहे हैं?', isMe: false, time: '1:10 PM', translated: 'Hello brother, how are you and where are you going?', isBengali: false },
+      { id: 'hi2', sender: 'Me', text: 'मैं बिल्कुल ठीक हूँ, ऑफिस जा रहा हूँ।', isMe: true, time: '1:12 PM', translated: 'I am doing great, heading to the office.', isBengali: false },
+      { id: 'hi3', sender: 'Rohit (Delhi)', text: 'क्या शाम को हम सब मिलेंगे?', isMe: false, time: '1:15 PM', translated: 'Are we all meeting in the evening?', isBengali: false },
+      { id: 'hi4', sender: 'Rohit (Delhi)', text: 'कृपया मुझे रिपोर्ट का लिंक भेज देना।', isMe: false, time: '1:18 PM', translated: 'Please send me the link to the report.', isBengali: false },
+    ],
+    chatTamil: [
+      { id: 'ta1', sender: 'Murugan (Chennai)', text: 'வணக்கம் நண்பா, எப்படி இருக்கிறீர்கள்?', isMe: false, time: '2:15 PM', translated: 'Hello friend, how are you?', isBengali: false },
+      { id: 'ta2', sender: 'Me', text: 'நான் நலமாக இருக்கிறேன், நன்றி!', isMe: true, time: '2:16 PM', translated: 'I am doing well, thank you!', isBengali: false },
+      { id: 'ta3', sender: 'Murugan (Chennai)', text: 'இன்று மாலை நாம் சந்திக்கலாமா?', isMe: false, time: '2:20 PM', translated: 'Can we meet this evening?', isBengali: false },
+      { id: 'ta4', sender: 'Murugan (Chennai)', text: 'அலுவலக அறிக்கை தயாராகிவிட்டதா?', isMe: false, time: '2:25 PM', translated: 'Is the office report ready?', isBengali: false }
+    ],
+    chatFrench: [
+      { id: 'fr1', sender: 'Julien (Paris)', text: "Bonjour mon ami, comment vas-tu aujourd'hui?", isMe: false, time: '10:05 AM', translated: 'Hello my friend, how are you today?', isBengali: false },
+      { id: 'fr2', sender: 'Me', text: 'Ça va très bien, merci beaucoup!', isMe: true, time: '10:06 AM', translated: 'Doing very well, thank you very much!', isBengali: false },
+      { id: 'fr3', sender: 'Julien (Paris)', text: 'Est-ce que le rapport est prêt pour la réunion?', isMe: false, time: '10:10 AM', translated: 'Is the report ready for the meeting?', isBengali: false },
+      { id: 'fr4', sender: 'Julien (Paris)', text: 'On se retrouve au bureau cet après-midi.', isMe: false, time: '10:15 AM', translated: "Let's meet at the office this afternoon.", isBengali: false }
     ]
   }), [dynamicMessages]);
 
   // Live Language Detection: Inspects messages in the active chat.
   // If an incoming message is NOT English, NOT in active downloaded pairs, and not dismissed,
-  // return its metadata to trigger the top-right corner icon popup!
+  // return its metadata to trigger the popup prompt to download local model!
   const detectedNewLanguageAlert = useMemo(() => {
     if (!isAutoDetectPromptEnabled || activeChat === 'home') return null;
-    const currentMessages = chatMessages[activeChat] || [];
+    const currentMessages = (chatMessages as Record<string, MessageBubble[]>)[activeChat] || [];
     for (const msg of currentMessages) {
       const detected = detectMessageLanguage(msg.text);
       if (detected && !activePacks.includes(detected.code) && !dismissedPacks.includes(detected.code)) {
@@ -757,6 +794,19 @@ export default function App() {
     }
     return null;
   }, [chatMessages, activeChat, activePacks, dismissedPacks, isAutoDetectPromptEnabled]);
+
+  // AUTOMATIC LIVE POPUP:
+  // When opening a chat with an uninstalled language (e.g. Hindi chat),
+  // immediately pop up the prompt window to download local model!
+  useEffect(() => {
+    if (
+      detectedNewLanguageAlert &&
+      !activePacks.includes(detectedNewLanguageAlert.code) &&
+      !dismissedPacks.includes(detectedNewLanguageAlert.code)
+    ) {
+      setShowDetectedLangModal(true);
+    }
+  }, [detectedNewLanguageAlert, activePacks, dismissedPacks]);
 
   // Compute Bengali test metrics
   const bengaliAnalysis = useMemo(() => {
@@ -792,20 +842,27 @@ export default function App() {
     };
   }, [testInput, ratioThreshold]);
 
-  const switchChat = (target: 'chatA' | 'chatB' | 'home') => {
+  const switchChat = (target: 'chatA' | 'chatB' | 'chatHindi' | 'chatTamil' | 'chatFrench' | 'home') => {
     const nextGen = sessionGen + 1;
     setSessionGen(nextGen);
     setExpandedMsgId(null);
     setActiveChat(target);
     if (target === 'home') {
+      setShowDetectedLangModal(false);
       setStatusLog(prev => [
         `[LEFT WHATSAPP] Home screen pressed. Watchdog triggered: 0 overlays allowed on Launcher. Session invalidated to Gen ${nextGen}`,
         ...prev.slice(0, 8)
       ]);
     } else {
-      const chatName = target === 'chatA' ? 'Chat A (Rafiq - Dhaka)' : 'Chat B (Tanvir - Chittagong)';
+      const names: Record<string, string> = {
+        chatA: 'Rafiq (Dhaka - Bengali)',
+        chatB: 'Tanvir (Chittagong - Bengali)',
+        chatHindi: 'Rohit (Delhi - Hindi)',
+        chatTamil: 'Murugan (Chennai - Tamil)',
+        chatFrench: 'Julien (Paris - French)'
+      };
       setStatusLog(prev => [
-        `[CHAT SWITCH] Switched to ${chatName}. Bumped generation: ${sessionGen} → ${nextGen}. Old overlays wiped.`,
+        `[CHAT SWITCH] Switched to ${names[target] || target}. Bumped generation: ${sessionGen} → ${nextGen}.`,
         ...prev.slice(0, 8)
       ]);
     }
@@ -1252,20 +1309,57 @@ export default function App() {
                   // WhatsApp Chat Interface
                   <div className="flex-1 bg-[#0b141a] rounded-2xl flex flex-col overflow-hidden border border-slate-800 relative">
                     {/* Chat Header */}
-                    <div className="bg-[#202c33] px-3 py-2.5 flex items-center justify-between text-slate-100 z-10">
+                    <div className="bg-[#202c33] px-3 py-2 flex items-center justify-between text-slate-100 z-10 border-b border-[#2a3942]">
                       <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => switchChat('home')}
+                          className="text-slate-400 hover:text-slate-200 p-0.5 -ml-1 text-xs cursor-pointer"
+                          title="Back to Launcher"
+                        >
+                          &larr;
+                        </button>
                         <div className="w-8 h-8 rounded-full bg-emerald-800 flex items-center justify-center font-bold text-xs text-emerald-200">
-                          {activeChat === 'chatA' ? 'RD' : 'TC'}
+                          {activeChat === 'chatA' ? 'RD' : activeChat === 'chatB' ? 'TC' : activeChat === 'chatHindi' ? 'RH' : activeChat === 'chatTamil' ? 'MC' : 'JP'}
                         </div>
                         <div>
-                          <div className="text-xs font-semibold">
-                            {activeChat === 'chatA' ? 'Rafiq (Dhaka)' : 'Tanvir (Chittagong)'}
+                          <div className="text-xs font-semibold flex items-center gap-1.5">
+                            <span>
+                              {activeChat === 'chatA' ? 'Rafiq' : activeChat === 'chatB' ? 'Tanvir' : activeChat === 'chatHindi' ? 'Rohit (Hindi)' : activeChat === 'chatTamil' ? 'Murugan (Tamil)' : 'Julien (French)'}
+                            </span>
+                            {activeChat === 'chatHindi' && <span className="text-[9px] px-1 rounded bg-amber-500/20 text-amber-300 font-mono">🇮🇳 HI</span>}
+                            {activeChat === 'chatTamil' && <span className="text-[9px] px-1 rounded bg-sky-500/20 text-sky-300 font-mono">🇮🇳 TA</span>}
+                            {activeChat === 'chatA' && <span className="text-[9px] px-1 rounded bg-emerald-500/20 text-emerald-300 font-mono">🇧🇩 BN</span>}
                           </div>
-                          <div className="text-[10px] text-emerald-400">online</div>
+                          <div className="text-[10px] text-emerald-400 flex items-center gap-1">
+                            <span>online</span>
+                            <span className="text-slate-400 text-[9px]">&bull;</span>
+                            <span className="text-slate-400 text-[9px]">Gen #{sessionGen}</span>
+                          </div>
                         </div>
                       </div>
-                      <div className="text-[10px] px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-800 text-emerald-300 font-mono">
-                        Gen #{sessionGen}
+                      {/* Chat quick switcher pill inside WhatsApp */}
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => switchChat('chatHindi')}
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer transition ${activeChat === 'chatHindi' ? 'bg-amber-600 text-white shadow' : 'bg-slate-800/80 text-amber-300 hover:bg-slate-700'}`}
+                          title="Open Hindi Chat (Rohit) - tests live uninstalled language detection"
+                        >
+                          🇮🇳 Hindi
+                        </button>
+                        <button
+                          onClick={() => switchChat('chatTamil')}
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer transition ${activeChat === 'chatTamil' ? 'bg-sky-600 text-white shadow' : 'bg-slate-800/80 text-sky-300 hover:bg-slate-700'}`}
+                          title="Open Tamil Chat (Murugan)"
+                        >
+                          🇮🇳 Tamil
+                        </button>
+                        <button
+                          onClick={() => switchChat('chatA')}
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer transition ${activeChat === 'chatA' ? 'bg-emerald-600 text-white shadow' : 'bg-slate-800/80 text-emerald-300 hover:bg-slate-700'}`}
+                          title="Open Bengali Chat (Rafiq)"
+                        >
+                          🇧🇩 Bengali
+                        </button>
                       </div>
                     </div>
 
@@ -1861,26 +1955,34 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
                   <button
                     onClick={() => switchChat('chatA')}
-                    className={`px-3 py-2 rounded-xl text-xs font-medium border text-center transition ${activeChat === 'chatA' ? 'bg-emerald-600 border-emerald-500 text-white shadow-md' : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800'}`}
+                    className={`px-3 py-2 rounded-xl text-xs font-medium border text-center transition cursor-pointer ${activeChat === 'chatA' ? 'bg-emerald-600 border-emerald-500 text-white shadow-md' : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800'}`}
                   >
-                    Open Chat A
+                    Chat A (Bengali)
                     <span className="block text-[10px] opacity-75 font-normal">Rafiq (Dhaka)</span>
                   </button>
 
                   <button
-                    onClick={() => switchChat('chatB')}
-                    className={`px-3 py-2 rounded-xl text-xs font-medium border text-center transition ${activeChat === 'chatB' ? 'bg-teal-600 border-teal-500 text-white shadow-md' : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800'}`}
+                    onClick={() => switchChat('chatHindi')}
+                    className={`px-3 py-2 rounded-xl text-xs font-medium border text-center transition cursor-pointer ${activeChat === 'chatHindi' ? 'bg-amber-600 border-amber-500 text-white shadow-md' : 'bg-slate-800/80 border-amber-800/60 text-amber-300 hover:bg-slate-800'}`}
                   >
-                    Open Chat B
-                    <span className="block text-[10px] opacity-75 font-normal">Tanvir (WA Business)</span>
+                    Hindi Chat 🔥
+                    <span className="block text-[10px] opacity-75 font-normal">Rohit (Delhi)</span>
+                  </button>
+
+                  <button
+                    onClick={() => switchChat('chatTamil')}
+                    className={`px-3 py-2 rounded-xl text-xs font-medium border text-center transition cursor-pointer ${activeChat === 'chatTamil' ? 'bg-sky-600 border-sky-500 text-white shadow-md' : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800'}`}
+                  >
+                    Tamil Chat
+                    <span className="block text-[10px] opacity-75 font-normal">Murugan (Chennai)</span>
                   </button>
 
                   <button
                     onClick={() => switchChat('home')}
-                    className={`px-3 py-2 rounded-xl text-xs font-medium border text-center transition ${activeChat === 'home' ? 'bg-indigo-600 border-indigo-500 text-white shadow-md' : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800'}`}
+                    className={`px-3 py-2 rounded-xl text-xs font-medium border text-center transition cursor-pointer ${activeChat === 'home' ? 'bg-indigo-600 border-indigo-500 text-white shadow-md' : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800'}`}
                   >
                     Press Home
                     <span className="block text-[10px] opacity-75 font-normal">Exit WhatsApp</span>

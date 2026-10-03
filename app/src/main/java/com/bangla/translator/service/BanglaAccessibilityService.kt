@@ -181,9 +181,9 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
                 className.contains("Chat") ||
                 className.contains("HomeActivity")
 
-        if (isConversationActivity && className != lastObservedChatWindow) {
-            lastObservedChatWindow = className
+        if (isConversationActivity) {
             startNewSession()
+            lastObservedChatWindow = className
         }
 
         scheduleDebouncedScan()
@@ -199,6 +199,7 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
         overlayController.removeAllOverlays()
         activeVisibleKeys.clear()
         inFlightSet.clear()
+        dismissedLangsThisSession.clear()
     }
 
     /**
@@ -245,43 +246,34 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
             val currentPairs = appPreferences.getLanguagePairs()
             val isSlotsFull = currentPairs.size >= com.bangla.translator.data.AppPreferences.MAX_ACTIVE_LANGUAGES
 
-            overlayController.showDetectedLanguageBadge(
+            overlayController.showLanguageProposalWindow(
                 languageItem = item,
                 sampleText = sample,
-                onOpenProposal = {
-                    overlayController.showLanguageProposalWindow(
-                        languageItem = item,
-                        sampleText = sample,
-                        isSlotsFull = isSlotsFull,
-                        currentPairs = currentPairs,
-                        onDownloadAndAdd = {
-                            dismissedLangsThisSession.add(uninstalled)
-                            appPreferences.addLanguagePair(uninstalled, "en")
-                            com.bangla.translator.translation.TranslationEngine.prepareModelIfNeeded(
-                                sourceLangCode = item.mlKitCode,
-                                onSuccess = {
-                                    mainHandler.post {
-                                        messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
-                                        performHierarchyScan()
-                                    }
-                                }
-                            )
-                        },
-                        onReplacePair = { oldSourceCode ->
-                            dismissedLangsThisSession.add(uninstalled)
-                            appPreferences.replaceLanguagePair(oldSourceCode, uninstalled, "en")
-                            com.bangla.translator.translation.TranslationEngine.prepareModelIfNeeded(
-                                sourceLangCode = item.mlKitCode,
-                                onSuccess = {
-                                    mainHandler.post {
-                                        messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
-                                        performHierarchyScan()
-                                    }
-                                }
-                            )
-                        },
-                        onDismiss = {
-                            dismissedLangsThisSession.add(uninstalled)
+                isSlotsFull = isSlotsFull,
+                currentPairs = currentPairs,
+                onDownloadAndAdd = {
+                    dismissedLangsThisSession.add(uninstalled)
+                    appPreferences.addLanguagePair(uninstalled, "en")
+                    com.bangla.translator.translation.TranslationEngine.prepareModelIfNeeded(
+                        sourceLangCode = item.mlKitCode,
+                        onSuccess = {
+                            mainHandler.post {
+                                messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
+                                performHierarchyScan()
+                            }
+                        }
+                    )
+                },
+                onReplacePair = { oldSourceCode ->
+                    dismissedLangsThisSession.add(uninstalled)
+                    appPreferences.replaceLanguagePair(oldSourceCode, uninstalled, "en")
+                    com.bangla.translator.translation.TranslationEngine.prepareModelIfNeeded(
+                        sourceLangCode = item.mlKitCode,
+                        onSuccess = {
+                            mainHandler.post {
+                                messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
+                                performHierarchyScan()
+                            }
                         }
                     )
                 },
@@ -420,6 +412,7 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
         overlayController.removeAllOverlays()
         activeVisibleKeys.clear()
         inFlightSet.clear()
+        dismissedLangsThisSession.clear()
         lastObservedChatWindow = null
         currentTypingBarTop = null
     }
@@ -454,7 +447,8 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
         } else if (key == AppPreferences.KEY_BENGALI_RATIO ||
             key == AppPreferences.KEY_SOURCE_LANG ||
             key == AppPreferences.KEY_TARGET_LANG ||
-            key == AppPreferences.KEY_ACTIVE_SOURCE_LANGS
+            key == AppPreferences.KEY_ACTIVE_SOURCE_LANGS ||
+            key == AppPreferences.KEY_PAIRS_CONFIG
         ) {
             messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
             TranslationEngine.setLanguagePair(appPreferences.sourceLanguageCode, appPreferences.targetLanguageCode)

@@ -945,7 +945,7 @@ object TranslationEngine {
 
     fun close() {
         for ((_, translator) in activeTranslators) {
-            try { translator.close() } catch (_: Exception) {}
+            try { translator.close() } catch (e: Exception) {}
         }
         activeTranslators.clear()
     }
@@ -982,7 +982,7 @@ object TranslationEngine {
                     val r = sb.toString().trim()
                     if (r.isNotEmpty()) translatedOnline = r
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {}
 
             if (!translatedOnline.isNullOrBlank() && translatedOnline != cleanText) {
                 cache.put(cacheKey, translatedOnline)
@@ -1055,7 +1055,7 @@ class WhatsAppMessageScanner(
                         node.getBoundsInScreen(tempBounds)
                         if (tempBounds.width() > 15 && tempBounds.height() > 15) {
                             if (!isInsideQuotedMessage(node)) {
-                                val text = node.text?.toString()
+                                val text = (node.text ?: node.contentDescription)?.toString()
                                 if (!text.isNullOrBlank() && !node.isEditable) {
                                     var matchedLang: String? = null
                                     for (lang in activeSourceLanguages) {
@@ -1248,7 +1248,7 @@ class OverlayController(private val context: Context, private val windowManager:
             try {
                 windowManager.addView(overlayView, lp)
                 activeOverlays[displayKey] = ActiveOverlay(overlayView, displayKey, sessionGeneration, targetBounds, screenBounds, inputBarTop, Rect(posX, posY, posX + measuredWidth, posY + measuredHeight))
-            } catch (_: Exception) {}
+            } catch (e: Exception) {}
         }
     }
 
@@ -1295,13 +1295,13 @@ class OverlayController(private val context: Context, private val windowManager:
         try {
             windowManager.addView(backdrop, lp)
             dismissBackdropView = backdrop
-        } catch (_: Exception) {}
+        } catch (e: Exception) {}
     }
 
     private fun removeDismissBackdrop() {
         val bd = dismissBackdropView ?: return
         dismissBackdropView = null
-        try { windowManager.removeView(bd) } catch (_: Exception) {}
+        try { windowManager.removeView(bd) } catch (e: Exception) {}
     }
 
     private fun updateDisplayState(active: ActiveOverlay, isExpanded: Boolean) {
@@ -1351,7 +1351,7 @@ class OverlayController(private val context: Context, private val windowManager:
         try {
             windowManager.updateViewLayout(active.view, lp)
             active.overlayScreenRect = Rect(posX, posY, posX + measuredWidth, posY + measuredHeight)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {}
     }
 
     private fun updateOverlayView(active: ActiveOverlay, translatedText: String, targetBounds: Rect, screenBounds: Rect, inputBarTop: Int?) {
@@ -1372,7 +1372,7 @@ class OverlayController(private val context: Context, private val windowManager:
                 removeDismissBackdrop()
             }
             activeOverlays.remove(displayKey)?.let {
-                try { windowManager.removeView(it.view) } catch (_: Exception) {}
+                try { windowManager.removeView(it.view) } catch (e: Exception) {}
             }
         }
     }
@@ -1387,7 +1387,7 @@ class OverlayController(private val context: Context, private val windowManager:
                         expandedDisplayKey = null
                         removeDismissBackdrop()
                     }
-                    try { windowManager.removeView(entry.value.view) } catch (_: Exception) {}
+                    try { windowManager.removeView(entry.value.view) } catch (e: Exception) {}
                     iterator.remove()
                 }
             }
@@ -1399,8 +1399,9 @@ class OverlayController(private val context: Context, private val windowManager:
             expandedDisplayKey = null
             removeDismissBackdrop()
             dismissLanguageProposal()
+            dismissDetectedLanguageBadge()
             for ((_, item) in activeOverlays) {
-                try { windowManager.removeView(item.view) } catch (_: Exception) {}
+                try { windowManager.removeView(item.view) } catch (e: Exception) {}
             }
             activeOverlays.clear()
         }
@@ -1416,15 +1417,18 @@ class OverlayController(private val context: Context, private val windowManager:
         onDismiss: () -> Unit
     ) {
         mainHandler.post {
-            if (detectedBadgeView != null || proposalDialogView != null) return@post
+            if (proposalDialogView != null) return@post
+            if (detectedBadgeView != null) {
+                dismissDetectedLanguageBadge()
+            }
             val badge = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setBackgroundResource(R.drawable.bg_overlay_incoming)
-                setPadding((8 * density).toInt(), (4 * density).toInt(), (8 * density).toInt(), (4 * density).toInt())
-                elevation = 16f * density
+                setPadding((12 * density).toInt(), (8 * density).toInt(), (14 * density).toInt(), (8 * density).toInt())
+                elevation = 20f * density
                 gravity = Gravity.CENTER_VERTICAL
                 isClickable = true
-                isFocusable = true
+                isFocusable = false
                 setOnClickListener {
                     dismissDetectedLanguageBadge()
                     onOpenProposal()
@@ -1433,7 +1437,7 @@ class OverlayController(private val context: Context, private val windowManager:
             val tvIcon = TextView(context).apply {
                 text = "🌐 \${languageItem.code.uppercase()}"
                 setTextColor(Color.parseColor("#25D366"))
-                textSize = 11f
+                textSize = 12f
                 paint.isFakeBoldText = true
             }
             badge.addView(tvIcon)
@@ -1441,17 +1445,19 @@ class OverlayController(private val context: Context, private val windowManager:
             val lp = WindowManager.LayoutParams().apply {
                 width = WindowManager.LayoutParams.WRAP_CONTENT
                 height = WindowManager.LayoutParams.WRAP_CONTENT
-                type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
-                flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+                type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+                flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                 format = PixelFormat.TRANSLUCENT
                 gravity = Gravity.TOP or Gravity.END
-                x = (16 * density).toInt()
-                y = (60 * density).toInt()
+                x = (14 * density).toInt()
+                y = (75 * density).toInt()
             }
             try {
                 windowManager.addView(badge, lp)
                 detectedBadgeView = badge
-            } catch (_: Exception) {}
+            } catch (e: Exception) {}
         }
     }
 
@@ -1465,6 +1471,7 @@ class OverlayController(private val context: Context, private val windowManager:
         onDismiss: () -> Unit
     ) {
         mainHandler.post {
+            if (proposalDialogView != null) return@post
             dismissDetectedLanguageBadge()
             dismissLanguageProposal()
 
@@ -1584,25 +1591,25 @@ class OverlayController(private val context: Context, private val windowManager:
             }
 
             val lp = WindowManager.LayoutParams().apply {
-                width = (300 * density).toInt()
+                width = (310 * density).toInt()
                 height = WindowManager.LayoutParams.WRAP_CONTENT
-                type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
-                flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+                type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+                flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                 format = PixelFormat.TRANSLUCENT
                 gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                y = (60 * density).toInt()
+                y = (70 * density).toInt()
             }
             try {
                 windowManager.addView(card, lp)
                 proposalDialogView = card
-            } catch (_: Exception) {}
+            } catch (e: Exception) {}
         }
     }
 
     fun dismissDetectedLanguageBadge() {
         mainHandler.post {
             detectedBadgeView?.let {
-                try { windowManager.removeView(it) } catch (_: Exception) {}
+                try { windowManager.removeView(it) } catch (e: Exception) {}
                 detectedBadgeView = null
             }
         }
@@ -1611,7 +1618,7 @@ class OverlayController(private val context: Context, private val windowManager:
     fun dismissLanguageProposal() {
         mainHandler.post {
             proposalDialogView?.let {
-                try { windowManager.removeView(it) } catch (_: Exception) {}
+                try { windowManager.removeView(it) } catch (e: Exception) {}
                 proposalDialogView = null
             }
         }
@@ -1685,6 +1692,12 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
             return
         }
 
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            sessionGeneration.incrementAndGet()
+            overlayController.removeAllOverlays()
+            dismissedLangsThisSession.clear()
+        }
+
         if (!appPreferences.isOverlayEnabled) return
 
         mainHandler.postDelayed({
@@ -1700,40 +1713,33 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
                 val currentPairs = appPreferences.getLanguagePairs()
                 val isSlotsFull = currentPairs.size >= AppPreferences.MAX_ACTIVE_LANGUAGES
 
-                overlayController.showDetectedLanguageBadge(
+                overlayController.showLanguageProposalWindow(
                     languageItem = item,
                     sampleText = sample,
-                    onOpenProposal = {
-                        overlayController.showLanguageProposalWindow(
-                            languageItem = item,
-                            sampleText = sample,
-                            isSlotsFull = isSlotsFull,
-                            currentPairs = currentPairs,
-                            onDownloadAndAdd = {
-                                dismissedLangsThisSession.add(uninstalled)
-                                appPreferences.addLanguagePair(uninstalled, "en")
-                                TranslationEngine.prepareModelIfNeeded(
-                                    sourceLangCode = item.mlKitCode,
-                                    onSuccess = {
-                                        mainHandler.post {
-                                            messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
-                                        }
-                                    }
-                                )
-                            },
-                            onReplacePair = { oldSourceCode ->
-                                dismissedLangsThisSession.add(uninstalled)
-                                appPreferences.replaceLanguagePair(oldSourceCode, uninstalled, "en")
-                                TranslationEngine.prepareModelIfNeeded(
-                                    sourceLangCode = item.mlKitCode,
-                                    onSuccess = {
-                                        mainHandler.post {
-                                            messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
-                                        }
-                                    }
-                                )
-                            },
-                            onDismiss = { dismissedLangsThisSession.add(uninstalled) }
+                    isSlotsFull = isSlotsFull,
+                    currentPairs = currentPairs,
+                    onDownloadAndAdd = {
+                        dismissedLangsThisSession.add(uninstalled)
+                        appPreferences.addLanguagePair(uninstalled, "en")
+                        TranslationEngine.prepareModelIfNeeded(
+                            sourceLangCode = item.mlKitCode,
+                            onSuccess = {
+                                mainHandler.post {
+                                    messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
+                                }
+                            }
+                        )
+                    },
+                    onReplacePair = { oldSourceCode ->
+                        dismissedLangsThisSession.add(uninstalled)
+                        appPreferences.replaceLanguagePair(oldSourceCode, uninstalled, "en")
+                        TranslationEngine.prepareModelIfNeeded(
+                            sourceLangCode = item.mlKitCode,
+                            onSuccess = {
+                                mainHandler.post {
+                                    messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
+                                }
+                            }
                         )
                     },
                     onDismiss = { dismissedLangsThisSession.add(uninstalled) }
@@ -1768,7 +1774,7 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
         if (key == "key_overlay_enabled") {
             if (!appPreferences.isOverlayEnabled) overlayController.removeAllOverlays()
-        } else if (key == "key_bengali_ratio" || key == "key_source_lang" || key == "key_target_lang" || key == "key_active_source_langs") {
+        } else if (key == "key_bengali_ratio" || key == "key_source_lang" || key == "key_target_lang" || key == "key_active_source_langs" || key == "key_pairs_config") {
             messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
             TranslationEngine.setLanguagePair(appPreferences.sourceLanguageCode, appPreferences.targetLanguageCode)
             overlayController.removeAllOverlays()

@@ -356,7 +356,7 @@ class OverlayController(
         dismissBackdropView = null
         try {
             windowManager.removeView(backdrop)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {}
     }
 
     private fun updateOverlayDisplayState(active: ActiveOverlay, isExpanded: Boolean) {
@@ -535,6 +535,7 @@ class OverlayController(
             expandedDisplayKey = null
             removeDismissBackdrop()
             dismissLanguageProposal()
+            dismissDetectedLanguageBadge()
             mainHandler.removeCallbacks(autoCollapseRunnable)
             for ((key, overlay) in activeOverlays) {
                 try {
@@ -561,16 +562,19 @@ class OverlayController(
         onDismiss: () -> Unit
     ) {
         runOnMainThread {
-            if (detectedBadgeView != null || proposalDialogView != null) return@runOnMainThread
+            if (proposalDialogView != null) return@runOnMainThread
+            if (detectedBadgeView != null) {
+                dismissDetectedLanguageBadge()
+            }
 
             val badge = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setBackgroundResource(R.drawable.bg_overlay_incoming)
-                setPadding((8 * density).toInt(), (4 * density).toInt(), (8 * density).toInt(), (4 * density).toInt())
-                elevation = 16f * density
+                setPadding((12 * density).toInt(), (8 * density).toInt(), (14 * density).toInt(), (8 * density).toInt())
+                elevation = 20f * density
                 gravity = Gravity.CENTER_VERTICAL
                 isClickable = true
-                isFocusable = true
+                isFocusable = false
                 setOnClickListener {
                     dismissDetectedLanguageBadge()
                     onOpenProposal()
@@ -580,7 +584,7 @@ class OverlayController(
             val tvIcon = TextView(context).apply {
                 text = "🌐 ${languageItem.code.uppercase()}"
                 setTextColor(Color.parseColor("#25D366"))
-                textSize = 11f
+                textSize = 12f
                 paint.isFakeBoldText = true
             }
 
@@ -589,24 +593,20 @@ class OverlayController(
             val lp = WindowManager.LayoutParams().apply {
                 width = WindowManager.LayoutParams.WRAP_CONTENT
                 height = WindowManager.LayoutParams.WRAP_CONTENT
-                type = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                } else {
-                    @Suppress("DEPRECATION")
-                    WindowManager.LayoutParams.TYPE_PHONE
-                }
+                type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
                 flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                         WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                 format = PixelFormat.TRANSLUCENT
                 gravity = Gravity.TOP or Gravity.END
-                x = (16 * density).toInt()
-                y = (60 * density).toInt()
+                x = (14 * density).toInt()
+                y = (75 * density).toInt()
             }
 
             try {
                 windowManager.addView(badge, lp)
                 detectedBadgeView = badge
+                Log.i(TAG, "Attached detected language badge for ${languageItem.code} at TOP|END")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to show detected language badge", e)
             }
@@ -628,8 +628,8 @@ class OverlayController(
         onDismiss: () -> Unit
     ) {
         runOnMainThread {
+            if (proposalDialogView != null) return@runOnMainThread
             dismissDetectedLanguageBadge()
-            dismissLanguageProposal()
 
             val card = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
@@ -754,24 +754,20 @@ class OverlayController(
             }
 
             val lp = WindowManager.LayoutParams().apply {
-                width = (300 * density).toInt()
+                width = (310 * density).toInt()
                 height = WindowManager.LayoutParams.WRAP_CONTENT
-                type = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                } else {
-                    @Suppress("DEPRECATION")
-                    WindowManager.LayoutParams.TYPE_PHONE
-                }
+                type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
                 flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                 format = PixelFormat.TRANSLUCENT
                 gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                y = (60 * density).toInt()
+                y = (70 * density).toInt()
             }
 
             try {
                 windowManager.addView(card, lp)
                 proposalDialogView = card
+                Log.i(TAG, "Attached proposal dialog view for ${languageItem.code}")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to show proposal dialog view", e)
             }
@@ -781,7 +777,7 @@ class OverlayController(
     fun dismissDetectedLanguageBadge() {
         runOnMainThread {
             detectedBadgeView?.let {
-                try { windowManager.removeView(it) } catch (_: Exception) {}
+                try { windowManager.removeView(it) } catch (e: Exception) {}
                 detectedBadgeView = null
             }
         }
@@ -790,7 +786,7 @@ class OverlayController(
     fun dismissLanguageProposal() {
         runOnMainThread {
             proposalDialogView?.let {
-                try { windowManager.removeView(it) } catch (_: Exception) {}
+                try { windowManager.removeView(it) } catch (e: Exception) {}
                 proposalDialogView = null
             }
         }
