@@ -483,8 +483,6 @@ class OverlayController(
         val llCollapsed = active.view.findViewById<LinearLayout>(R.id.llCollapsedBadge)
         val llExpanded = active.view.findViewById<LinearLayout>(R.id.llExpandedCard)
         val ivBadge = active.view.findViewById<ImageView>(R.id.ivBadgeIcon)
-        val tvBadge = active.view.findViewById<TextView>(R.id.tvBadgeText)
-        val tvLabel = active.view.findViewById<TextView>(R.id.tvLanguageLabel)
 
         llCollapsed?.setBackgroundResource(bgRes)
         llExpanded?.setBackgroundResource(bgRes)
