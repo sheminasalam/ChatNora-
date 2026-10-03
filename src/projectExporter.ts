@@ -607,6 +607,35 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_AUTO_DETECT_PROMPT, true)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_DETECT_PROMPT, value).apply()
 
+    var ignoredLanguages: Set<String>
+        get() {
+            val raw = prefs.getString(KEY_IGNORED_LANGS, null)
+            return if (raw.isNullOrBlank()) {
+                emptySet()
+            } else {
+                raw.split(",").filter { it.isNotBlank() }.toSet()
+            }
+        }
+        set(value) {
+            prefs.edit().putString(KEY_IGNORED_LANGS, value.joinToString(",")).apply()
+        }
+
+    fun addIgnoredLanguage(code: String) {
+        val current = ignoredLanguages.toMutableSet()
+        current.add(code.lowercase())
+        ignoredLanguages = current
+    }
+
+    fun removeIgnoredLanguage(code: String) {
+        val current = ignoredLanguages.toMutableSet()
+        current.remove(code.lowercase())
+        ignoredLanguages = current
+    }
+
+    fun isLanguageIgnored(code: String): Boolean {
+        return ignoredLanguages.contains(code.lowercase())
+    }
+
     var activeSourceLanguages: Set<String>
         get() {
             val raw = prefs.getString(KEY_ACTIVE_SOURCE_LANGS, null)
@@ -716,6 +745,7 @@ class AppPreferences(context: Context) {
         const val KEY_ACTIVE_SOURCE_LANGS = "key_active_source_langs"
         const val KEY_PAIRS_CONFIG = "key_pairs_config"
         const val KEY_AUTO_DETECT_PROMPT = "key_auto_detect_prompt"
+        const val KEY_IGNORED_LANGS = "key_ignored_langs"
         const val MAX_ACTIVE_LANGUAGES = 3
     }
 }
@@ -1468,6 +1498,7 @@ class OverlayController(private val context: Context, private val windowManager:
         currentPairs: List<com.bangla.translator.data.LanguagePairPreference>,
         onDownloadAndAdd: () -> Unit,
         onReplacePair: (oldSourceCode: String) -> Unit,
+        onIgnoreLanguage: (langCode: String) -> Unit,
         onDismiss: () -> Unit
     ) {
         mainHandler.post {
@@ -1590,6 +1621,27 @@ class OverlayController(private val context: Context, private val windowManager:
                 card.addView(btnDownload)
             }
 
+            val btnIgnore = TextView(context).apply {
+                text = "🚫 Ignore \${languageItem.name} (Don't Ask Again)"
+                textSize = 11f
+                setTextColor(Color.parseColor("#F6AD55"))
+                setBackgroundColor(Color.parseColor("#111B21"))
+                setPadding((10 * density).toInt(), (8 * density).toInt(), (10 * density).toInt(), (8 * density).toInt())
+                gravity = Gravity.CENTER
+                paint.isFakeBoldText = true
+                isClickable = true
+                isFocusable = true
+                val lpBtn = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    setMargins(0, (6 * density).toInt(), 0, (2 * density).toInt())
+                }
+                layoutParams = lpBtn
+                setOnClickListener {
+                    dismissLanguageProposal()
+                    onIgnoreLanguage(languageItem.code)
+                }
+            }
+            card.addView(btnIgnore)
+
             val lp = WindowManager.LayoutParams().apply {
                 width = (310 * density).toInt()
                 height = WindowManager.LayoutParams.WRAP_CONTENT
@@ -1707,7 +1759,11 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
             root.recycle()
 
             val uninstalled = scanResult.detectedUninstalledLanguage
-            if (uninstalled != null && appPreferences.isAutoDetectPromptEnabled && !dismissedLangsThisSession.contains(uninstalled)) {
+            if (uninstalled != null &&
+                appPreferences.isAutoDetectPromptEnabled &&
+                !appPreferences.isLanguageIgnored(uninstalled) &&
+                !dismissedLangsThisSession.contains(uninstalled)
+            ) {
                 val item = SupportedLanguages.findByCode(uninstalled)
                 val sample = scanResult.sampleUninstalledText ?: ""
                 val currentPairs = appPreferences.getLanguagePairs()
@@ -1741,6 +1797,10 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
                                 }
                             }
                         )
+                    },
+                    onIgnoreLanguage = { langCode ->
+                        dismissedLangsThisSession.add(langCode)
+                        appPreferences.addIgnoredLanguage(langCode)
                     },
                     onDismiss = { dismissedLangsThisSession.add(uninstalled) }
                 )

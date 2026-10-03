@@ -625,6 +625,7 @@ class OverlayController(
         currentPairs: List<com.bangla.translator.data.LanguagePairPreference>,
         onDownloadAndAdd: () -> Unit,
         onReplacePair: (oldSourceCode: String) -> Unit,
+        onIgnoreLanguage: (langCode: String) -> Unit,
         onDismiss: () -> Unit
     ) {
         runOnMainThread {
@@ -752,6 +753,27 @@ class OverlayController(
                 }
                 card.addView(btnDownload)
             }
+
+            val btnIgnore = TextView(context).apply {
+                text = "🚫 Ignore ${languageItem.name} (Don't Ask Again)"
+                textSize = 11f
+                setTextColor(Color.parseColor("#F6AD55"))
+                setBackgroundColor(Color.parseColor("#111B21"))
+                setPadding((10 * density).toInt(), (8 * density).toInt(), (10 * density).toInt(), (8 * density).toInt())
+                gravity = Gravity.CENTER
+                paint.isFakeBoldText = true
+                isClickable = true
+                isFocusable = true
+                val lpBtn = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    setMargins(0, (6 * density).toInt(), 0, (2 * density).toInt())
+                }
+                layoutParams = lpBtn
+                setOnClickListener {
+                    dismissLanguageProposal()
+                    onIgnoreLanguage(languageItem.code)
+                }
+            }
+            card.addView(btnIgnore)
 
             val lp = WindowManager.LayoutParams().apply {
                 width = (310 * density).toInt()

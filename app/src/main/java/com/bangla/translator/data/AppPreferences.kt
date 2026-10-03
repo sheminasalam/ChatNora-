@@ -49,6 +49,39 @@ class AppPreferences(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_AUTO_DETECT_PROMPT, value).apply()
 
     /**
+     * Set of language codes that the user has chosen to ignore from live detection.
+     * Prevents recurring prompts for wrongly detected or unwanted languages.
+     */
+    var ignoredLanguages: Set<String>
+        get() {
+            val raw = prefs.getString(KEY_IGNORED_LANGS, null)
+            return if (raw.isNullOrBlank()) {
+                emptySet()
+            } else {
+                raw.split(",").filter { it.isNotBlank() }.toSet()
+            }
+        }
+        set(value) {
+            prefs.edit().putString(KEY_IGNORED_LANGS, value.joinToString(",")).apply()
+        }
+
+    fun addIgnoredLanguage(code: String) {
+        val current = ignoredLanguages.toMutableSet()
+        current.add(code.lowercase())
+        ignoredLanguages = current
+    }
+
+    fun removeIgnoredLanguage(code: String) {
+        val current = ignoredLanguages.toMutableSet()
+        current.remove(code.lowercase())
+        ignoredLanguages = current
+    }
+
+    fun isLanguageIgnored(code: String): Boolean {
+        return ignoredLanguages.contains(code.lowercase())
+    }
+
+    /**
      * Active source language codes (up to 3 simultaneous pairs to protect phone RAM & storage).
      * Example: ["bn", "es", "ar"]
      */
@@ -163,6 +196,7 @@ class AppPreferences(context: Context) {
         const val KEY_ACTIVE_SOURCE_LANGS = "key_active_source_langs"
         const val KEY_PAIRS_CONFIG = "key_pairs_config"
         const val KEY_AUTO_DETECT_PROMPT = "key_auto_detect_prompt"
+        const val KEY_IGNORED_LANGS = "key_ignored_langs"
         const val MAX_ACTIVE_LANGUAGES = 3
     }
 }

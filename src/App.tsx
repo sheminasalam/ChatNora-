@@ -26,7 +26,9 @@ import {
   Trash2,
   RefreshCw,
   Globe,
-  X
+  X,
+  Ban,
+  ShieldAlert
 } from 'lucide-react';
 import { downloadProjectZip } from './projectExporter';
 
@@ -463,6 +465,34 @@ export default function App() {
   const [downloadingPack, setDownloadingPack] = useState<string | null>(null);
   const [dismissedPacks, setDismissedPacks] = useState<string[]>([]);
 
+  // Ignored Languages from Live Detection (Prevents recurring prompts for wrongly detected or unwanted languages)
+  const [ignoredLanguages, setIgnoredLanguages] = useState<string[]>([]);
+  const [showAddIgnoreModal, setShowAddIgnoreModal] = useState<boolean>(false);
+  const [selectedIgnoreLang, setSelectedIgnoreLang] = useState<string>('hi');
+
+  const handleIgnoreLanguage = (langCode: string) => {
+    if (!ignoredLanguages.includes(langCode)) {
+      setIgnoredLanguages(prev => [...prev, langCode]);
+    }
+    const meta = ALL_LANGUAGES.find(l => l.code === langCode);
+    showToast(`Added ${meta?.label || langCode.toUpperCase()} to Ignore List.`);
+    setStatusLog(prev => [
+      `[IGNORE LIST] Added ${meta?.label || langCode.toUpperCase()} (${langCode}) to Ignore List. Live detection will bypass this language.`,
+      ...prev.slice(0, 8)
+    ]);
+    setShowDetectedLangModal(false);
+  };
+
+  const handleRemoveIgnoredLanguage = (langCode: string) => {
+    setIgnoredLanguages(prev => prev.filter(l => l !== langCode));
+    const meta = ALL_LANGUAGES.find(l => l.code === langCode);
+    showToast(`Unignored ${meta?.label || langCode.toUpperCase()}`);
+    setStatusLog(prev => [
+      `[UNIGNORE] Removed ${meta?.label || langCode.toUpperCase()} from Ignore List. Live detection re-enabled for this language.`,
+      ...prev.slice(0, 8)
+    ]);
+  };
+
   // Manual Add Pair Dialog State
   const [showAddPairModal, setShowAddPairModal] = useState<boolean>(false);
   const [manualAddSource, setManualAddSource] = useState<string>('es');
@@ -780,7 +810,12 @@ export default function App() {
     const currentMessages = (chatMessages as Record<string, MessageBubble[]>)[activeChat] || [];
     for (const msg of currentMessages) {
       const detected = detectMessageLanguage(msg.text);
-      if (detected && !activePacks.includes(detected.code) && !dismissedPacks.includes(detected.code)) {
+      if (
+        detected &&
+        !activePacks.includes(detected.code) &&
+        !dismissedPacks.includes(detected.code) &&
+        !ignoredLanguages.includes(detected.code)
+      ) {
         return {
           code: detected.code,
           label: detected.label,
@@ -793,7 +828,7 @@ export default function App() {
       }
     }
     return null;
-  }, [chatMessages, activeChat, activePacks, dismissedPacks, isAutoDetectPromptEnabled]);
+  }, [chatMessages, activeChat, activePacks, dismissedPacks, ignoredLanguages, isAutoDetectPromptEnabled]);
 
   // AUTOMATIC LIVE POPUP:
   // When opening a chat with an uninstalled language (e.g. Hindi chat),
@@ -1548,6 +1583,19 @@ export default function App() {
                               </div>
                             </div>
                           )}
+
+                          {/* Option to Ignore this language from live detection */}
+                          <div className="pt-2.5 mt-2 border-t border-[#2a3942] flex items-center justify-between">
+                            <button
+                              onClick={() => handleIgnoreLanguage(detectedNewLanguageAlert.code)}
+                              className="text-[11px] text-amber-400 hover:text-amber-300 font-medium flex items-center gap-1.5 py-1 px-2 rounded-lg hover:bg-[#111b21] transition cursor-pointer"
+                              title="Add to Ignore List so ChatNora never prompts for this language again"
+                            >
+                              <Ban className="w-3.5 h-3.5 text-amber-400" />
+                              <span>Ignore {detectedNewLanguageAlert.label} (Don't Ask Again)</span>
+                            </button>
+                            <span className="text-[9px] text-slate-500">Adds to Ignore List</span>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -1885,6 +1933,153 @@ export default function App() {
                               <span>Save &amp; Download Model</span>
                             </>
                           )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Live Language Detection Toggle & Ignore List */}
+                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80 mb-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Live New Language Detection</span>
+                        <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-bold ${isAutoDetectPromptEnabled ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-slate-800 text-slate-400'}`}>
+                          {isAutoDetectPromptEnabled ? 'ACTIVE' : 'DISABLED'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Automatically prompts to download offline packs (~30MB) when unknown languages appear in chats.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const next = !isAutoDetectPromptEnabled;
+                        setIsAutoDetectPromptEnabled(next);
+                        showToast(`Live New Language Detection is now ${next ? 'Enabled' : 'Disabled'}`);
+                      }}
+                      className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${isAutoDetectPromptEnabled ? 'bg-emerald-600' : 'bg-slate-800'}`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${isAutoDetectPromptEnabled ? 'translate-x-5' : 'translate-x-0'}`}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-800/80">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-300">
+                        <Ban className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Ignored Languages List</span>
+                        <span className="text-[10px] font-mono text-slate-400">({ignoredLanguages.length} ignored)</span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          const available = ALL_LANGUAGES.find(l => !ignoredLanguages.includes(l.code));
+                          if (available) setSelectedIgnoreLang(available.code);
+                          setShowAddIgnoreModal(true);
+                        }}
+                        className="text-[11px] font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-800/60 transition cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" /> Add to Ignore List
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mb-2">
+                      Languages in this list will never trigger live detection popups (useful for wrong detections or languages you don&apos;t want to translate).
+                    </p>
+
+                    {ignoredLanguages.length === 0 ? (
+                      <div className="text-[11px] text-slate-500 italic bg-slate-900/60 p-2 rounded-lg border border-slate-800/60 text-center">
+                        No languages currently ignored. All new foreign languages will prompt when encountered.
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {ignoredLanguages.map((code) => {
+                          const lang = ALL_LANGUAGES.find(l => l.code === code);
+                          return (
+                            <div
+                              key={code}
+                              className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-900 border border-amber-900/40 text-slate-200 text-xs shadow-sm"
+                            >
+                              <span>{lang?.flag || '🌐'}</span>
+                              <span className="font-semibold text-white">{lang?.label || code.toUpperCase()}</span>
+                              <span className="text-[10px] text-slate-400 font-mono">({code})</span>
+                              <button
+                                onClick={() => handleRemoveIgnoredLanguage(code)}
+                                className="ml-1 text-slate-400 hover:text-rose-400 text-xs p-0.5 rounded hover:bg-slate-800 transition cursor-pointer"
+                                title="Remove from Ignore List (re-enable detection)"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* MODAL: Add Language to Ignore List */}
+                {showAddIgnoreModal && (
+                  <div className="mb-4 p-4 rounded-xl bg-slate-950 border border-amber-500/60 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-800">
+                      <div className="flex items-center gap-2">
+                        <Ban className="w-4 h-4 text-amber-400" />
+                        <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                          Add Language to Ignore List
+                        </h4>
+                      </div>
+                      <button
+                        onClick={() => setShowAddIgnoreModal(false)}
+                        className="text-slate-400 hover:text-white text-xs cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <div className="mb-3">
+                      <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                        Select Language to Bypass / Ignore:
+                      </label>
+                      <select
+                        value={selectedIgnoreLang}
+                        onChange={(e) => setSelectedIgnoreLang(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                      >
+                        {ALL_LANGUAGES.map((lang) => {
+                          const isIgnored = ignoredLanguages.includes(lang.code);
+                          return (
+                            <option key={lang.code} value={lang.code} disabled={isIgnored}>
+                              {lang.flag} {lang.label} ({lang.nativeName}) {isIgnored ? '— Already Ignored' : ''}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 pt-2">
+                      <span className="text-[10px] text-slate-400">
+                        ChatNora will never pop up download prompts for this language.
+                      </span>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setShowAddIgnoreModal(false)}
+                          className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white text-xs cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => {
+                            handleIgnoreLanguage(selectedIgnoreLang);
+                            setShowAddIgnoreModal(false);
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs shadow transition cursor-pointer"
+                        >
+                          <Ban className="w-3.5 h-3.5" />
+                          <span>Add to Ignore List</span>
                         </button>
                       </div>
                     </div>

@@ -308,6 +308,97 @@ class MainActivity : AppCompatActivity() {
             val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
             startActivity(intent)
         }
+
+        // Live Auto-Detect Language Prompt Switch
+        binding.switchAutoDetectPrompt.isChecked = appPreferences.isAutoDetectPromptEnabled
+        binding.switchAutoDetectPrompt.setOnCheckedChangeListener { _, isChecked ->
+            appPreferences.isAutoDetectPromptEnabled = isChecked
+        }
+
+        // Add Ignored Language Button
+        binding.btnAddIgnoredLanguage.setOnClickListener {
+            showAddIgnoredLanguageDialog()
+        }
+
+        refreshIgnoredLanguagesUI()
+    }
+
+    private fun refreshIgnoredLanguagesUI() {
+        val ignored = appPreferences.ignoredLanguages.toList()
+        binding.layoutIgnoredLanguages.removeAllViews()
+
+        if (ignored.isEmpty()) {
+            val emptyTv = android.widget.TextView(this).apply {
+                text = "No languages currently ignored."
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
+                textSize = 12f
+            }
+            binding.layoutIgnoredLanguages.addView(emptyTv)
+            return
+        }
+
+        for (code in ignored) {
+            val item = SupportedLanguages.findByCode(code)
+            val chip = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(24, 12, 24, 12)
+                setBackgroundResource(R.drawable.bg_overlay_incoming)
+                val lp = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(0, 6, 0, 6)
+                }
+                layoutParams = lp
+            }
+
+            val tvName = android.widget.TextView(this).apply {
+                text = "🚫 ${item.name} (${item.nativeName}) [${code.uppercase()}]"
+                setTextColor(android.graphics.Color.WHITE)
+                textSize = 12f
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+
+            val btnRemove = android.widget.TextView(this).apply {
+                text = "✕ Unignore"
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.whatsapp_green))
+                textSize = 11f
+                paint.isFakeBoldText = true
+                setPadding(16, 4, 16, 4)
+                setOnClickListener {
+                    appPreferences.removeIgnoredLanguage(code)
+                    refreshIgnoredLanguagesUI()
+                    Toast.makeText(this@MainActivity, "Unignored ${item.name}", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            chip.addView(tvName)
+            chip.addView(btnRemove)
+            binding.layoutIgnoredLanguages.addView(chip)
+        }
+    }
+
+    private fun showAddIgnoredLanguageDialog() {
+        val currentIgnored = appPreferences.ignoredLanguages
+        val available = SupportedLanguages.ALL.filter { !currentIgnored.contains(it.code) }
+
+        if (available.isEmpty()) {
+            Toast.makeText(this, "All languages are already in the ignore list.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val items = available.map { "${it.name} (${it.nativeName})" }.toTypedArray()
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Add Language to Ignore List")
+            .setItems(items) { _, which ->
+                val chosen = available[which]
+                appPreferences.addIgnoredLanguage(chosen.code)
+                refreshIgnoredLanguagesUI()
+                Toast.makeText(this, "Ignored ${chosen.name}. Live detection will not prompt for it.", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun handleEnableNotifications() {

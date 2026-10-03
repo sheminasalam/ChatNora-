@@ -240,7 +240,11 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
 
         // Check if an uninstalled language is discovered and propose language pack
         val uninstalled = scanResult.detectedUninstalledLanguage
-        if (uninstalled != null && appPreferences.isAutoDetectPromptEnabled && !dismissedLangsThisSession.contains(uninstalled)) {
+        if (uninstalled != null &&
+            appPreferences.isAutoDetectPromptEnabled &&
+            !appPreferences.isLanguageIgnored(uninstalled) &&
+            !dismissedLangsThisSession.contains(uninstalled)
+        ) {
             val item = com.bangla.translator.data.SupportedLanguages.findByCode(uninstalled)
             val sample = scanResult.sampleUninstalledText ?: ""
             val currentPairs = appPreferences.getLanguagePairs()
@@ -276,6 +280,10 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
                             }
                         }
                     )
+                },
+                onIgnoreLanguage = { langCode ->
+                    dismissedLangsThisSession.add(langCode)
+                    appPreferences.addIgnoredLanguage(langCode)
                 },
                 onDismiss = {
                     dismissedLangsThisSession.add(uninstalled)
