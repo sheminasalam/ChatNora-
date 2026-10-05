@@ -14,16 +14,24 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Multi-Language On-Device Translation Engine with Intelligent Pack Management.
- * Supports up to 3 simultaneous active language pairs with sub-millisecond detection
- * and on-demand model downloading to minimize phone RAM and storage consumption.
+ * Supports up to 3 simultaneous active language pairs with sub-millisecond detection,
+ * automatic multilingual segment decomposition for mixed messages, and on-demand model
+ * downloading to minimize phone RAM and storage consumption.
  */
 object TranslationEngine {
     private const val TAG = "TranslationEngine"
+
+    data class TranslationDetails(
+        val translatedText: String,
+        val detectedLanguages: List<String>
+    )
 
     // Thread pool for network translation fallback (max 3 concurrent requests)
     private val networkExecutor = Executors.newFixedThreadPool(3)
@@ -208,7 +216,7 @@ object TranslationEngine {
     }
 
     /**
-     * Translates message text with automatic language detection, multilingual segmentation, and fallback.
+     * Standard translation call with backwards-compatible signature.
      */
     fun translate(
         text: String,
@@ -217,38 +225,115 @@ object TranslationEngine {
         onSuccess: (String) -> Unit,
         onFailure: ((Exception) -> Unit)? = null
     ) {
+        translateWithDetails(
+            text = text,
+            sourceCode = sourceCode,
+            targetCode = targetCode,
+            onSuccess = { details -> onSuccess(details.translatedText) },
+            onFailure = onFailure
+        )
+    }
+
+    /**
+     * Advanced multilingual translation: splits message into segments, translates each
+     * segment in its native language, preserves forwarded headers, and returns details.
+     */
+    fun translateWithDetails(
+        text: String,
+        sourceCode: String? = null,
+        targetCode: String = currentTargetLang,
+        onSuccess: (TranslationDetails) -> Unit,
+        onFailure: ((Exception) -> Unit)? = null
+    ) {
         val cleanText = text.trim()
         if (cleanText.isEmpty()) {
-            onSuccess("")
+            onSuccess(TranslationDetails("", emptyList()))
             return
         }
 
-        val detectedLangs = LanguageDetector.getDetectedLanguages(cleanText)
-        val isMultilingual = (sourceCode?.contains("+") == true) || (detectedLangs.size > 1)
+        // Check if message contains multiple segments with distinct languages
+        val segments = LanguageDetector.splitMultilingualSegments(cleanText)
+        val detectedLanguages = segments.mapNotNull { it.detectedLanguage }.distinct()
 
-        // Determine effective source language
-        val effectiveSource = when {
-            isMultilingual -> if (sourceCode?.contains("+") == true) sourceCode else detectedLangs.joinToString("+")
-            sourceCode != null -> sourceCode
-            else -> LanguageDetector.detectLanguage(cleanText) ?: currentSourceLang
+        // Single language or monolithic message path
+        if (detectedLanguages.size <= 1) {
+            val effectiveSource = detectedLanguages.firstOrNull()
+                ?: sourceCode
+                ?: LanguageDetector.detectLanguage(cleanText)
+                ?: currentSourceLang
+
+            translateSingleChunk(cleanText, effectiveSource, targetCode, { translated ->
+                onSuccess(TranslationDetails(translated, if (detectedLanguages.isNotEmpty()) detectedLanguages else listOf(effectiveSource)))
+            }, onFailure)
+            return
         }
 
-        // Check memory cache
-        val cacheKey = "$effectiveSource:$cleanText"
+        // Multilingual message path: multiple distinct languages found in one message!
+        networkExecutor.execute {
+            try {
+                val translatedSegments = arrayOfNulls<String>(segments.size)
+                val latch = CountDownLatch(segments.size)
+
+                for ((index, segment) in segments.withIndex()) {
+                    val segBody = segment.body.trim()
+                    if (segBody.isEmpty()) {
+                        translatedSegments[index] = segment.prefix
+                        latch.countDown()
+                        continue
+                    }
+
+                    val segLang = segment.detectedLanguage
+                    if (segLang == null) {
+                        // Body is numbers/symbols or English - preserve original
+                        translatedSegments[index] = "${segment.prefix}${segBody}"
+                        latch.countDown()
+                    } else {
+                        translateSingleChunk(segBody, segLang, targetCode, { translatedPart ->
+                            translatedSegments[index] = "${segment.prefix}${translatedPart}"
+                            latch.countDown()
+                        }, {
+                            translatedSegments[index] = segment.rawSegment
+                            latch.countDown()
+                        })
+                    }
+                }
+
+                // Wait up to 5 seconds for all segments to complete
+                latch.await(5, TimeUnit.SECONDS)
+
+                val combined = translatedSegments.filterNotNull().joinToString("\n")
+                cache.put(cleanText, combined)
+                onSuccess(TranslationDetails(combined, detectedLanguages))
+            } catch (e: Exception) {
+                Log.e(TAG, "Multilingual translation error: ${e.message}", e)
+                onFailure?.invoke(e) ?: onSuccess(TranslationDetails(cleanText, detectedLanguages))
+            }
+        }
+    }
+
+    /**
+     * Translates a single text chunk with cache, online fast path, and local ML Kit fallback.
+     */
+    private fun translateSingleChunk(
+        cleanText: String,
+        sourceCode: String,
+        targetCode: String,
+        onSuccess: (String) -> Unit,
+        onFailure: ((Exception) -> Unit)?
+    ) {
+        val cacheKey = "$sourceCode:$cleanText"
         val cached = cache.get(cacheKey) ?: cache.get(cleanText)
         if (cached != null) {
             onSuccess(cached)
             return
         }
 
-        // Fast network attempt for natural conversational translation (sl=auto seamlessly translates multilingual messages)
         networkExecutor.execute {
             var translatedOnline: String? = null
             try {
-                val onlineSource = if (isMultilingual) "auto" else effectiveSource
-                translatedOnline = fetchOnlineTranslation(cleanText, onlineSource, targetCode)
+                translatedOnline = fetchOnlineTranslation(cleanText, sourceCode, targetCode)
             } catch (e: Exception) {
-                Log.d(TAG, "Online translation unavailable, falling back to ML Kit: ${e.message}")
+                Log.d(TAG, "Online translation fallback to ML Kit: ${e.message}")
             }
 
             if (!translatedOnline.isNullOrBlank() && translatedOnline != cleanText) {
@@ -259,71 +344,7 @@ object TranslationEngine {
             }
 
             // Fallback to local on-device ML Kit Translator
-            if (isMultilingual) {
-                translateMultilingualOnDevice(cleanText, onSuccess, onFailure)
-            } else {
-                translateOnDevice(cleanText, effectiveSource, onSuccess, onFailure)
-            }
-        }
-    }
-
-    /**
-     * Translates each multilingual segment independently using its on-device ML Kit model,
-     * then recombines the translated segments into a unified coherent message.
-     */
-    private fun translateMultilingualOnDevice(
-        cleanText: String,
-        onSuccess: (String) -> Unit,
-        onFailure: ((Exception) -> Unit)?
-    ) {
-        val segments = LanguageDetector.detectLanguageSegments(cleanText)
-        if (segments.isEmpty()) {
-            onSuccess(cleanText)
-            return
-        }
-
-        val translatedSegments = arrayOfNulls<String>(segments.size)
-        val remaining = java.util.concurrent.atomic.AtomicInteger(segments.size)
-
-        for (i in segments.indices) {
-            val seg = segments[i]
-            val segLang = seg.languageCode ?: currentSourceLang
-            if (seg.languageCode == "en") {
-                translatedSegments[i] = seg.text
-                if (remaining.decrementAndGet() == 0) {
-                    val full = translatedSegments.filterNotNull().joinToString(" ")
-                    cache.put(cleanText, full)
-                    onSuccess(full)
-                }
-            } else {
-                try {
-                    val translator = getOrCreateTranslator(segLang)
-                    translator.translate(seg.text)
-                        .addOnSuccessListener { result ->
-                            translatedSegments[i] = result
-                            if (remaining.decrementAndGet() == 0) {
-                                val full = translatedSegments.filterNotNull().joinToString(" ")
-                                cache.put(cleanText, full)
-                                onSuccess(full)
-                            }
-                        }
-                        .addOnFailureListener {
-                            translatedSegments[i] = seg.text
-                            if (remaining.decrementAndGet() == 0) {
-                                val full = translatedSegments.filterNotNull().joinToString(" ")
-                                cache.put(cleanText, full)
-                                onSuccess(full)
-                            }
-                        }
-                } catch (e: Exception) {
-                    translatedSegments[i] = seg.text
-                    if (remaining.decrementAndGet() == 0) {
-                        val full = translatedSegments.filterNotNull().joinToString(" ")
-                        cache.put(cleanText, full)
-                        onSuccess(full)
-                    }
-                }
-            }
+            translateOnDevice(cleanText, sourceCode, onSuccess, onFailure)
         }
     }
 
@@ -354,8 +375,7 @@ object TranslationEngine {
 
     private fun fetchOnlineTranslation(text: String, sourceLang: String, targetLang: String): String? {
         val encodedText = URLEncoder.encode(text, "UTF-8")
-        val effectiveSl = if (sourceLang.contains("+") || sourceLang == "auto" || sourceLang.isBlank()) "auto" else sourceLang
-        val urlStr = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=$effectiveSl&tl=$targetLang&dt=t&q=$encodedText"
+        val urlStr = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=$sourceLang&tl=$targetLang&dt=t&q=$encodedText"
 
         val url = URL(urlStr)
         val conn = url.openConnection() as HttpURLConnection

@@ -112,8 +112,10 @@ class OverlayController(
             val tvBadge = overlayView.findViewById<TextView>(R.id.tvBadgeText)
             val tvLabel = overlayView.findViewById<TextView>(R.id.tvLanguageLabel)
             val tvTranslated = overlayView.findViewById<TextView>(R.id.tvTranslatedText)
-            val sv = overlayView.findViewById<ScrollView>(R.id.svTranslatedText)
-            val tvClose = overlayView.findViewById<TextView>(R.id.tvCloseExpanded)
+            val svContainer = overlayView.findViewById<android.widget.ScrollView>(R.id.svTranslatedContainer)
+            val tvScrollHint = overlayView.findViewById<TextView>(R.id.tvScrollHint)
+            val ivClose = overlayView.findViewById<ImageView>(R.id.ivCloseOverlay)
+            val llHeader = overlayView.findViewById<LinearLayout>(R.id.llExpandedHeader)
 
             tvTranslated.text = translatedText
             tvLabel.text = languagePairLabel
@@ -137,18 +139,19 @@ class OverlayController(
             ivBadge.setColorFilter(labelColor)
             tvBadge.setTextColor(labelColor)
             tvLabel.setTextColor(labelColor)
-            tvClose?.setTextColor(labelColor)
+            ivClose?.setColorFilter(labelColor)
+            tvScrollHint?.setTextColor(labelColor)
 
             // Click to expand
             llCollapsed.setOnClickListener {
                 expandOverlay(displayKey)
             }
 
-            // Click to collapse
-            tvClose?.setOnClickListener {
+            // Click close button or header bar to collapse (avoid collapsing on text scroll drag!)
+            ivClose?.setOnClickListener {
                 collapseOverlay(displayKey)
             }
-            tvLabel.setOnClickListener {
+            llHeader?.setOnClickListener {
                 collapseOverlay(displayKey)
             }
 
@@ -174,28 +177,23 @@ class OverlayController(
             }
 
             if (isExpanded) {
-                val spaceBelow = bottomLimit - (targetBounds.bottom + gapPx)
-                val spaceAbove = (targetBounds.top - gapPx) - statusBarInsetPx
-                val availableSpace = maxOf(spaceBelow, spaceAbove)
-
-                // Capped maximum height for the expanded translation bubble so long messages scroll vertically
-                val maxBubbleHeight = (screenH * 0.45f).toInt()
-                    .coerceAtMost((availableSpace - (8 * density).toInt()).coerceAtLeast((180 * density).toInt()))
-
-                sv?.layoutParams?.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                val maxBubbleHeightPx = (240 * density).toInt().coerceAtMost((screenH * 0.40f).toInt())
+                svContainer?.layoutParams?.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT
                 overlayView.measure(
                     View.MeasureSpec.makeMeasureSpec(bubbleWidth, View.MeasureSpec.EXACTLY),
                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
                 )
 
-                if (overlayView.measuredHeight > maxBubbleHeight) {
-                    val overhead = (overlayView.measuredHeight - (sv?.measuredHeight ?: 0)).coerceAtLeast((28 * density).toInt())
-                    val scrollHeight = (maxBubbleHeight - overhead).coerceAtLeast((120 * density).toInt())
-                    sv?.layoutParams?.height = scrollHeight
+                if (overlayView.measuredHeight > maxBubbleHeightPx) {
+                    tvScrollHint?.visibility = View.VISIBLE
+                    val scrollMaxHeight = (maxBubbleHeightPx - (28 * density).toInt()).coerceAtLeast((80 * density).toInt())
+                    svContainer?.layoutParams?.height = scrollMaxHeight
                     overlayView.measure(
                         View.MeasureSpec.makeMeasureSpec(bubbleWidth, View.MeasureSpec.EXACTLY),
                         View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
                     )
+                } else {
+                    tvScrollHint?.visibility = View.GONE
                 }
 
                 measuredWidth = bubbleWidth
@@ -207,7 +205,7 @@ class OverlayController(
                 posX = calculatedX
 
                 // Vertical placement for expanded bubble: prefer below; if too close to bottom limit, place above!
-                posY = if (spaceBelow >= measuredHeight || spaceBelow >= spaceAbove) {
+                posY = if (targetBounds.bottom + gapPx + measuredHeight <= bottomLimit) {
                     targetBounds.bottom + gapPx
                 } else {
                     (targetBounds.top - measuredHeight - gapPx).coerceAtLeast(statusBarInsetPx)
@@ -412,30 +410,27 @@ class OverlayController(
         val posX: Int
         val posY: Int
 
-        val sv = active.view.findViewById<ScrollView>(R.id.svTranslatedText)
         if (isExpanded) {
-            val spaceBelow = bottomLimit - (active.currentBounds.bottom + gapPx)
-            val spaceAbove = (active.currentBounds.top - gapPx) - statusBarInsetPx
-            val availableSpace = maxOf(spaceBelow, spaceAbove)
+            val svContainer = active.view.findViewById<android.widget.ScrollView>(R.id.svTranslatedContainer)
+            val tvScrollHint = active.view.findViewById<TextView>(R.id.tvScrollHint)
+            val maxBubbleHeightPx = (240 * density).toInt().coerceAtMost((screenH * 0.40f).toInt())
 
-            // Capped maximum height for the expanded translation bubble so long messages scroll vertically
-            val maxBubbleHeight = (screenH * 0.38f).toInt()
-                .coerceAtMost((availableSpace - (8 * density).toInt()).coerceAtLeast((140 * density).toInt()))
-
-            sv?.layoutParams?.height = ViewGroup.LayoutParams.WRAP_CONTENT
+            svContainer?.layoutParams?.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT
             active.view.measure(
                 View.MeasureSpec.makeMeasureSpec(bubbleWidth, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
             )
 
-            if (active.view.measuredHeight > maxBubbleHeight) {
-                val overhead = (active.view.measuredHeight - (sv?.measuredHeight ?: 0)).coerceAtLeast((28 * density).toInt())
-                val scrollHeight = (maxBubbleHeight - overhead).coerceAtLeast((90 * density).toInt())
-                sv?.layoutParams?.height = scrollHeight
+            if (active.view.measuredHeight > maxBubbleHeightPx) {
+                tvScrollHint?.visibility = View.VISIBLE
+                val scrollMaxHeight = (maxBubbleHeightPx - (28 * density).toInt()).coerceAtLeast((80 * density).toInt())
+                svContainer?.layoutParams?.height = scrollMaxHeight
                 active.view.measure(
                     View.MeasureSpec.makeMeasureSpec(bubbleWidth, View.MeasureSpec.EXACTLY),
                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
                 )
+            } else {
+                tvScrollHint?.visibility = View.GONE
             }
 
             measuredWidth = bubbleWidth
@@ -446,16 +441,13 @@ class OverlayController(
             if (calculatedX < marginPx) calculatedX = marginPx
             posX = calculatedX
 
-            posY = if (spaceBelow >= measuredHeight || spaceBelow >= spaceAbove) {
+            posY = if (active.currentBounds.bottom + gapPx + measuredHeight <= bottomLimit) {
                 active.currentBounds.bottom + gapPx
             } else {
                 (active.currentBounds.top - measuredHeight - gapPx).coerceAtLeast(statusBarInsetPx)
             }
             active.view.elevation = 24 * density
         } else {
-            // Collapsed: Reset ScrollView height
-            sv?.layoutParams?.height = ViewGroup.LayoutParams.WRAP_CONTENT
-
             // Collapsed: middle of the side away from outer edge of screen
             active.view.measure(
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
@@ -538,6 +530,11 @@ class OverlayController(
         ivBadge?.setColorFilter(labelColor)
         tvBadge?.setTextColor(labelColor)
         tvLabel?.setTextColor(labelColor)
+
+        val ivClose = active.view.findViewById<ImageView>(R.id.ivCloseOverlay)
+        val tvScrollHint = active.view.findViewById<TextView>(R.id.tvScrollHint)
+        ivClose?.setColorFilter(labelColor)
+        tvScrollHint?.setTextColor(labelColor)
 
         updateOverlayDisplayState(active, isExpanded)
     }

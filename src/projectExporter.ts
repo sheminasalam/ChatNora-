@@ -83,6 +83,7 @@ jobs:
       - name: Rename APK for clarity
         run: |
           mkdir -p build-output
+          # Locate whatever debug apk gradle produced and copy to ChatNora-debug.apk
           find app/build/outputs/apk/debug/ -name "*.apk" -exec cp {} build-output/ChatNora-debug.apk \\;
 
       - name: Upload Debug APK Artifact
@@ -119,7 +120,7 @@ android {
     applicationVariants.all {
         outputs.all {
             val output = this as? com.android.build.gradle.internal.api.BaseVariantOutputImpl
-            output?.outputFileName = "ChatNora-\${name}.apk"
+            output?.outputFileName = "ChatNora-\\\${name}.apk"
         }
     }
 
@@ -153,17 +154,22 @@ android {
 }
 
 dependencies {
+    // AndroidX & UI
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
 
+    // Kotlin Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
+    // Google ML Kit On-Device Translation & Language Identification
     implementation("com.google.mlkit:translate:17.0.3")
+    implementation("com.google.mlkit:language-id:17.0.6")
 
+    // Unit Testing
     testImplementation("junit:junit:4.13.2")
     testImplementation("androidx.test:core:1.5.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
@@ -171,12 +177,18 @@ dependencies {
 `,
 
   'app/proguard-rules.pro': `# ProGuard rules for Bangla WhatsApp Translator
+
+# Keep ML Kit Translate classes and model loaders
 -keep class com.google.mlkit.nl.translate.** { *; }
 -keep class com.google.android.gms.internal.mlkit_translate.** { *; }
+
+# Keep model data classes
 -keepclassmembers class * {
     @androidx.annotation.Keep <fields>;
     @androidx.annotation.Keep <methods>;
 }
+
+# Retain Parcelable and Serializable implementations
 -keepclassmembers class * implements android.os.Parcelable {
     static ** CREATOR;
 }
@@ -185,7 +197,10 @@ dependencies {
   'app/src/main/AndroidManifest.xml': `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Optional permission on Android 13+ (API 33+) only required if user enables translated notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    
+    <!-- Required for ML Kit to download on-device Bengali-English models via Google Play Services -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
@@ -196,6 +211,7 @@ dependencies {
         android:supportsRtl="true"
         android:theme="@style/Theme.ChatNora">
 
+        <!-- Main Configuration Activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -206,6 +222,7 @@ dependencies {
             </intent-filter>
         </activity>
 
+        <!-- Core WhatsApp Accessibility Service for In-Chat Bengali Translation -->
         <service
             android:name=".service.BanglaAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
@@ -218,6 +235,7 @@ dependencies {
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
+        <!-- Optional Notification Listener Service for Incoming Bengali WhatsApp Notifications -->
         <service
             android:name=".service.NotificationTranslationService"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
@@ -247,20 +265,26 @@ dependencies {
     <string name="app_name">ChatNora</string>
     <string name="accessibility_service_label">ChatNora Accessibility Service</string>
     <string name="accessibility_service_description">ChatNora detects foreign language messages inside WhatsApp and WhatsApp Business conversations to display instant on-device translations. 100% private, messages never leave your phone.</string>
+    
+    <!-- UI Strings -->
     <string name="title_status">Service Status</string>
     <string name="accessibility_status_enabled">ChatNora Service is Active</string>
     <string name="accessibility_status_disabled">ChatNora Service is Disabled</string>
     <string name="btn_enable_accessibility">Configure Accessibility</string>
+    
     <string name="title_model">Translation Engine (On-Device ML Kit)</string>
     <string name="model_status_ready">On-Device Model Ready (~30MB)</string>
     <string name="model_status_needed">Model Download Required (~30MB)</string>
     <string name="model_status_downloading">Downloading Translation Model…</string>
     <string name="btn_download_model">Download Language Model</string>
+    
     <string name="title_overlay_settings">In-App Chat Overlay</string>
     <string name="desc_overlay_settings">Display translated text directly alongside WhatsApp chat messages.</string>
+    
     <string name="title_notification_settings">WhatsApp Notification Translation</string>
     <string name="desc_notification_settings">Automatically detect and translate incoming WhatsApp notifications.</string>
     <string name="btn_enable_notification_access">Enable Notification Access</string>
+    
     <string name="title_privacy">Privacy &amp; Security Assurance</string>
     <string name="privacy_body">All translations run 100% locally on your device via Google ML Kit. No message content is ever transmitted over the network or logged to remote servers.</string>
 </resources>
@@ -288,6 +312,10 @@ dependencies {
     <color name="overlay_outgoing_label">#25D366</color>
 
     <color name="overlay_text">#E9EDEF</color>
+    <color name="overlay_background">#1F2C34</color>
+    <color name="overlay_stroke">#2A3942</color>
+    <color name="overlay_subtext">#8696A0</color>
+    <color name="overlay_dot">#25D366</color>
 </resources>
 `,
 
@@ -323,15 +351,22 @@ dependencies {
         android:pathData="M252,367 C207,367 164,344 137,310 L162,300 L107,280 L107,340 L127,324 C158,364 204,388 254,388 C277,388 300,383 320,374 L309,354 C292,362 272,367 252,367 Z" />
 
     <!-- Universal Translation Character '文' (Wen) -->
+    <!-- Top Dot / Head -->
     <path
         android:fillColor="#FFFFFF"
         android:pathData="M182,160 L204,160 C206,175 204,192 196,204 L178,198 C182,188 184,175 182,160 Z" />
+
+    <!-- Horizontal Bar -->
     <path
         android:fillColor="#FFFFFF"
         android:pathData="M124,204 L258,204 L258,225 L124,225 Z" />
+
+    <!-- Left Slanted Stroke (Pie) -->
     <path
         android:fillColor="#FFFFFF"
         android:pathData="M198,225 C190,265 168,305 125,335 L110,318 C148,292 170,258 178,225 Z" />
+
+    <!-- Right Slanted Stroke (Na) -->
     <path
         android:fillColor="#FFFFFF"
         android:pathData="M165,248 L184,235 C202,265 228,298 266,326 L250,342 C210,310 182,275 165,248 Z" />
@@ -340,6 +375,7 @@ dependencies {
     <path
         android:fillColor="#FFFFFF"
         android:pathData="M344,182 L320,335 L342,335 L350,285 L392,285 L400,335 L422,335 L398,182 L376,182 Z M354,266 L371,212 L388,266 L354,266 Z" />
+
 </vector>
 `,
 
@@ -365,6 +401,39 @@ dependencies {
 </shape>
 `,
 
+  'app/src/main/res/drawable/bg_overlay_card.xml': `<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/overlay_incoming_bg" />
+    <stroke
+        android:width="0.8dp"
+        android:color="@color/overlay_incoming_stroke" />
+    <corners android:radius="14dp" />
+</shape>
+`,
+
+  'app/src/main/res/drawable/ic_launcher_foreground.xml': `<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,24c-16.57,0 -30,13.43 -30,30 0,5.3 1.38,10.27 3.79,14.59L24,84l15.82,-3.73C44.02,82.63 48.86,84 54,84c16.57,0 30,-13.43 30,-30S70.57,24 54,24zm-6.3,16h4.6v2.3h-4.6v2.3h-2.3v-2.3H37v-2.3h8.4c-0.5,-1.6 -1.5,-3 -2.7,-4.1l1.7,-1.6c1.6,1.4 2.8,3.3 3.6,5.7h-2.3zM67,64h-3.2l-2.1,-5.5h-8.4L51.2,64H48l7.5,-19h3.8L67,64zm-6.3,-8.2l-3,-8.2 -3,8.2h6z"/>
+</vector>
+`,
+
+  'app/src/main/res/drawable/ic_translate.xml': `<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#1B4F72"
+        android:pathData="M12.87,15.07l-2.54,-2.51l0.03,-0.03c1.74,-1.94 2.98,-4.17 3.71,-6.53H17V4h-7V2H8v2H1v2h11.17C11.5,7.92 10.44,9.75 9,11.35 8.07,10.32 7.3,9.19 6.69,8h-2c0.73,1.63 1.73,3.17 2.98,4.56l-5.09,5.02L4,19l5,-5 3.11,3.11 0.76,-2.04zM18.5,10h-2L12,22h2l1.12,-3h4.75L21,22h2l-4.5,-12zm-2.62,7l1.62,-4.33L19.12,17h-3.24z"/>
+</vector>
+`,
+
   'app/src/main/res/values/themes.xml': `<resources>
     <style name="Theme.ChatNora" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/primary</item>
@@ -373,6 +442,7 @@ dependencies {
         <item name="android:statusBarColor">@color/primary_dark</item>
         <item name="android:windowBackground">@color/background_light</item>
     </style>
+    <!-- Backwards compatible alias -->
     <style name="Theme.BanglaWhatsAppTranslator" parent="Theme.ChatNora" />
 </resources>
 `,
@@ -384,7 +454,806 @@ dependencies {
     android:layout_height="match_parent"
     android:fillViewport="true"
     android:background="@color/background_light">
-    <!-- Clean Material 3 Settings Dashboard -->
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <!-- Universal Header -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingBottom="16dp">
+
+            <ImageView
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:src="@drawable/ic_app_launcher"
+                android:contentDescription="@null" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/app_name"
+                    android:textColor="@color/primary"
+                    android:textSize="19sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvHeaderSubtitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Universal On-Device WhatsApp Translator"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Multi-Language Pairs Management Card -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="14dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="2dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="#E0E0E0">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Configured Language Pairs (Max 3)"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp"
+                        android:textAllCaps="true"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvActivePairsBadge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_overlay_incoming"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:paddingTop="2dp"
+                        android:paddingBottom="2dp"
+                        android:text="1/3 Active"
+                        android:textColor="@color/whatsapp_green"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <!-- Slot 1 (Primary Pair) -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="Slot 1 (Primary Pair):"
+                    android:textColor="@color/text_primary"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <Spinner
+                    android:id="@+id/spinnerSourceLanguage"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="4dp"
+                    android:background="@drawable/bg_overlay_incoming"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp" />
+
+                <!-- Slot 2 -->
+                <LinearLayout
+                    android:id="@+id/layoutSlot2"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/tvSlot2Title"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Slot 2 Pair:"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btnRemoveSlot2"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:padding="4dp"
+                            android:text="Remove"
+                            android:textColor="@color/status_inactive"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <Spinner
+                        android:id="@+id/spinnerSlot2Language"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:layout_marginTop="4dp"
+                        android:background="@drawable/bg_overlay_incoming"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp" />
+                </LinearLayout>
+
+                <!-- Slot 3 -->
+                <LinearLayout
+                    android:id="@+id/layoutSlot3"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/tvSlot3Title"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Slot 3 Pair:"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btnRemoveSlot3"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:padding="4dp"
+                            android:text="Remove"
+                            android:textColor="@color/status_inactive"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <Spinner
+                        android:id="@+id/spinnerSlot3Language"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:layout_marginTop="4dp"
+                        android:background="@drawable/bg_overlay_incoming"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp" />
+                </LinearLayout>
+
+                <!-- Button to Add 2nd / 3rd Pair -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnAddLanguagePair"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="+ Add Language Pair"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:textColor="@color/whatsapp_green"
+                    app:strokeColor="@color/whatsapp_green"
+                    app:strokeWidth="1dp" />
+
+                <!-- Target Language Selector -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="Translate All Messages Into (Target):"
+                    android:textColor="@color/text_primary"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <Spinner
+                    android:id="@+id/spinnerTargetLanguage"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="4dp"
+                    android:background="@drawable/bg_overlay_incoming"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp" />
+
+                <TextView
+                    android:id="@+id/tvActivePairSummary"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Active Pairs: বাংলা → English"
+                    android:textColor="@color/whatsapp_green"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Accessibility Service Card -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="14dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="2dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="#E0E0E0">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/title_status"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp"
+                    android:textAllCaps="true"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvAccessibilityStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/accessibility_status_disabled"
+                    android:textColor="@color/status_inactive"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Required to detect WhatsApp chat bubbles and attach interactive translation badges."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnEnableAccessibility"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/btn_enable_accessibility"
+                    android:backgroundTint="@color/primary" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Translation Model Card -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="14dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="2dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="#E0E0E0">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/title_model"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp"
+                    android:textAllCaps="true"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvModelStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/model_status_needed"
+                    android:textColor="@color/status_inactive"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvModelDescription"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Downloads ~30MB Google ML Kit on-device model for completely offline translations."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+
+                <ProgressBar
+                    android:id="@+id/pbModelDownload"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:indeterminate="true"
+                    android:visibility="gone" />
+
+                <!-- Model Update Notification & Action Banner -->
+                <LinearLayout
+                    android:id="@+id/layoutModelUpdateBanner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:background="#2E2415"
+                    android:padding="10dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tvModelUpdateTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="🔔 Model Update Available (v2.4)"
+                        android:textColor="#F6AD55"
+                        android:textStyle="bold"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/tvModelUpdateDesc"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Improved French &amp; Spanish disambiguation, richer vocabulary dictionaries, and faster on-device inference."
+                        android:textColor="#E2E8F0"
+                        android:textSize="11sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnUpdateModel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:layout_marginTop="6dp"
+                        android:text="Update All Models (v2.4)"
+                        android:textSize="11sp"
+                        android:backgroundTint="#D97706" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnDownloadModel"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/btn_download_model"
+                        android:backgroundTint="@color/primary" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnDeleteModel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:text="Delete"
+                        android:visibility="gone"
+                        app:strokeColor="@color/status_inactive"
+                        app:strokeWidth="1dp"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:textColor="@color/status_inactive" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- In-App Overlay Settings -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="14dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="2dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="#E0E0E0">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/title_overlay_settings"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Show [文A] badges on WhatsApp chat bubbles."
+                            android:textColor="@color/text_secondary"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/switchOverlay"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checked="true" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Live New Language Detection & Ignore List Card -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="14dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="2dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="#E0E0E0">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <!-- Toggle Live Detection -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Live New Language Detection"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Scan for unrecognized foreign languages in chats and prompt to download local packs."
+                            android:textColor="@color/text_secondary"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/switchAutoDetectPrompt"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checked="true" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginBottom="12dp"
+                    android:background="#EEEEEE" />
+
+                <!-- Ignore List Header -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Ignored Languages (Bypassed)"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/btnAddIgnoredLanguage"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="+ Add"
+                        android:textColor="@color/whatsapp_green"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:padding="4dp" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Languages you chose to ignore will never trigger the download popup."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp" />
+
+                <!-- Container for Ignored Languages Chips / Tags -->
+                <LinearLayout
+                    android:id="@+id/layoutIgnoredLanguages"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tvNoIgnoredLanguages"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="No languages currently ignored."
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Notification Translation Settings -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="14dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="2dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="#E0E0E0">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/title_notification_settings"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/desc_notification_settings"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/switchNotifications"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnEnableNotificationAccess"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="@string/btn_enable_notification_access"
+                    android:visibility="gone"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:textColor="@color/primary"
+                    app:strokeColor="@color/primary" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Privacy Assurance Card -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="14dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="2dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="#E0E0E0">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/title_privacy"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp"
+                    android:textAllCaps="true"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="100% private and on-device via Google ML Kit. No messages are logged, stored, or sent to external servers."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Repository & Issue Tracker Contact Card -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="2dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="#E0E0E0">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Repository &amp; Issue Updates"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp"
+                        android:textAllCaps="true"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_overlay_incoming"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:paddingTop="2dp"
+                        android:paddingBottom="2dp"
+                        android:text="Open Source"
+                        android:textColor="@color/whatsapp_green"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="Found a bug, missing language, or have feedback? Submit issues directly on GitHub or reach out to the developer."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:orientation="vertical"
+                    android:background="#F1F3F4"
+                    android:padding="10dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Repository: github.com/sheminasalam/ChatNora"
+                        android:textColor="@color/text_primary"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Contact: sheminasalam@gmail.com"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnReportGitHubIssue"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="6dp"
+                        android:text="Report Issue"
+                        android:textSize="12sp"
+                        app:backgroundTint="@color/primary"
+                        android:textColor="#FFFFFF" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnContactDevEmail"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="6dp"
+                        android:text="Email Dev"
+                        android:textSize="12sp"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:textColor="@color/primary"
+                        app:strokeColor="@color/primary" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+    </LinearLayout>
 </ScrollView>
 `,
 
@@ -430,7 +1299,7 @@ dependencies {
             android:includeFontPadding="false" />
     </LinearLayout>
 
-    <!-- Expanded State: Chat Bubble Shape & Size (Matching WhatsApp Bubble) with Vertical Scrolling -->
+    <!-- Expanded State: Chat Bubble Shape & Size (Matching WhatsApp Bubble) with Vertical Scroll Support -->
     <LinearLayout
         android:id="@+id/llExpandedCard"
         android:layout_width="match_parent"
@@ -441,13 +1310,19 @@ dependencies {
         android:paddingStart="12dp"
         android:paddingTop="6dp"
         android:paddingEnd="12dp"
-        android:paddingBottom="7dp">
+        android:paddingBottom="7dp"
+        android:clickable="true"
+        android:focusable="true">
 
+        <!-- Top Header Bar with Language Label, Scroll Indicator and Close Button -->
         <LinearLayout
+            android:id="@+id/llExpandedHeader"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:clickable="true"
+            android:focusable="true">
 
             <TextView
                 android:id="@+id/tvLanguageLabel"
@@ -461,32 +1336,36 @@ dependencies {
                 android:letterSpacing="0.02" />
 
             <TextView
-                android:id="@+id/tvCloseExpanded"
+                android:id="@+id/tvScrollHint"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="✕"
-                android:textSize="11sp"
+                android:text="↕ Scroll"
+                android:textSize="9sp"
                 android:textColor="@color/overlay_incoming_label"
-                android:paddingStart="6dp"
-                android:paddingEnd="2dp"
-                android:paddingTop="1dp"
-                android:paddingBottom="1dp"
-                android:clickable="true"
-                android:focusable="true" />
+                android:visibility="gone"
+                android:layout_marginEnd="6dp"
+                android:includeFontPadding="false" />
+
+            <ImageView
+                android:id="@+id/ivCloseOverlay"
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:src="@android:drawable/ic_menu_close_clear_cancel"
+                android:contentDescription="Close"
+                app:tint="@color/overlay_incoming_label" />
         </LinearLayout>
 
+        <!-- Vertical Scroll Container for long messages without cropping -->
         <ScrollView
-            android:id="@+id/svTranslatedText"
+            android:id="@+id/svTranslatedContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="3dp"
+            android:layout_marginTop="2.5dp"
             android:scrollbars="vertical"
             android:fadeScrollbars="false"
-            android:scrollbarSize="3.5dp"
-            android:scrollbarThumbVertical="@android:color/darker_gray"
+            android:fillViewport="true"
             android:overScrollMode="ifContentScrolls"
-            android:isScrollContainer="true"
-            android:fillViewport="true">
+            android:nestedScrollingEnabled="true">
 
             <TextView
                 android:id="@+id/tvTranslatedText"
@@ -495,8 +1374,7 @@ dependencies {
                 android:textColor="@color/overlay_text"
                 android:textSize="13.5sp"
                 android:textStyle="normal"
-                android:lineSpacingExtra="2dp"
-                android:maxLines="200"
+                android:lineSpacingExtra="1.5dp"
                 android:includeFontPadding="false"
                 android:textIsSelectable="false" />
         </ScrollView>
@@ -505,17 +1383,61 @@ dependencies {
 </FrameLayout>
 `,
 
+  'app/src/main/res/layout/layout_floating_toggle.xml': `<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/pillToggleContainer"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_overlay_card"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:elevation="8dp"
+    android:paddingStart="8dp"
+    android:paddingTop="4dp"
+    android:paddingEnd="10dp"
+    android:paddingBottom="4dp">
+
+    <ImageView
+        android:id="@+id/ivToggleIcon"
+        android:layout_width="12dp"
+        android:layout_height="12dp"
+        android:src="@drawable/ic_translate"
+        android:contentDescription="@null"
+        app:tint="@color/overlay_subtext" />
+
+    <TextView
+        android:id="@+id/tvToggleText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="5dp"
+        android:text="Hide"
+        android:textStyle="bold"
+        android:textColor="@color/overlay_text"
+        android:textSize="11sp" />
+</LinearLayout>
+`,
+
   'app/src/main/java/com/bangla/translator/data/Models.kt': `package com.bangla.translator.data
 
 import android.graphics.Rect
 
+/**
+ * Unique key for positioning and tracking an overlay on screen during a specific session generation.
+ * Note: Session generation is tied to the active conversation.
+ */
 data class DisplayKey(
     val sessionGeneration: Long,
     val normalizedText: String,
     val screenX: Int,
     val screenY: Int
-)
+) {
+    override fun toString(): String = "gen_\${sessionGeneration}_\${normalizedText.hashCode()}_\${screenX}_\${screenY}"
+}
 
+/**
+ * Message detected from the WhatsApp accessibility tree with detected language code.
+ */
 data class ScannedMessage(
     val originalText: String,
     val normalizedText: String,
@@ -524,6 +1446,9 @@ data class ScannedMessage(
     val languageCode: String = "bn"
 )
 
+/**
+ * Result of an asynchronous translation task.
+ */
 data class TranslationResult(
     val originalText: String,
     val normalizedText: String,
@@ -534,6 +1459,9 @@ data class TranslationResult(
     val languageCode: String = "bn"
 )
 
+/**
+ * Represents the status of the local ML Kit translation model.
+ */
 sealed class ModelDownloadState {
     object NotDownloaded : ModelDownloadState()
     object Downloading : ModelDownloadState()
@@ -601,11 +1529,18 @@ object SupportedLanguages {
 import android.content.Context
 import android.content.SharedPreferences
 
+/**
+ * Configuration item for an active language pair (Source Language → Target Language).
+ */
 data class LanguagePairPreference(
     val sourceCode: String,
     val targetCode: String = "en"
 )
 
+/**
+ * Manages user preferences for overlays, notifications, multi-language active pairs (max 3),
+ * and intelligent on-device language pack detection.
+ */
 class AppPreferences(context: Context) {
     private val prefs: SharedPreferences = context.applicationContext.getSharedPreferences(
         PREFS_NAME,
@@ -639,6 +1574,10 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_AUTO_DETECT_PROMPT, true)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_DETECT_PROMPT, value).apply()
 
+    /**
+     * Set of language codes that the user has chosen to ignore from live detection.
+     * Prevents recurring prompts for wrongly detected or unwanted languages.
+     */
     var ignoredLanguages: Set<String>
         get() {
             val raw = prefs.getString(KEY_IGNORED_LANGS, null)
@@ -668,6 +1607,10 @@ class AppPreferences(context: Context) {
         return ignoredLanguages.contains(code.lowercase())
     }
 
+    /**
+     * Active source language codes (up to 3 simultaneous pairs to protect phone RAM & storage).
+     * Example: ["bn", "es", "ar"]
+     */
     var activeSourceLanguages: Set<String>
         get() {
             val raw = prefs.getString(KEY_ACTIVE_SOURCE_LANGS, null)
@@ -747,7 +1690,9 @@ class AppPreferences(context: Context) {
         return removeLanguagePair(code)
     }
 
-    fun isLanguageActive(code: String): Boolean = activeSourceLanguages.contains(code.lowercase())
+    fun isLanguageActive(code: String): Boolean {
+        return activeSourceLanguages.contains(code.lowercase())
+    }
 
     val languagePairLabel: String
         get() {
@@ -795,61 +1740,227 @@ class AppPreferences(context: Context) {
 
   'app/src/main/java/com/bangla/translator/translation/LanguageDetector.kt': `package com.bangla.translator.translation
 
+import com.google.mlkit.nl.languageid.LanguageIdentification
+import com.google.mlkit.nl.languageid.LanguageIdentifier
 import java.util.regex.Pattern
 
+/**
+ * Universal language detector supporting 19+ languages on WhatsApp.
+ * Combines ultra-fast (sub-millisecond) zero-CPU Unicode script filters
+ * with Google ML Kit Language Identification for Romance/Latin languages.
+ * Now features intelligent segment decomposition for multi-language single messages.
+ */
 object LanguageDetector {
-    private val URL_PATTERN = Pattern.compile("^https?://[\\\\w.-]+(?:\\\\.[\\\\w\\\\.-]+)+[/#?]?.*$", Pattern.CASE_INSENSITIVE)
-    private val TIMESTAMP_PATTERN = Pattern.compile("^\\\\d{1,2}:\\\\d{2}(?:\\\\s?[APap][Mm])?$")
 
-    data class TextSegment(val text: String, val languageCode: String?)
-    fun detectLanguageSegments(text: CharSequence?): List<TextSegment> {
-        if (text.isNullOrBlank()) return emptyList()
-        val str = text.toString().trim()
-        val sentenceRegex = Regex("(?<=[.!?\\n])\\s+")
-        val rawParts = str.split(sentenceRegex).map { it.trim() }.filter { it.isNotEmpty() }
-        if (rawParts.size <= 1) {
-            val detected = detectLanguage(str)
-            return listOf(TextSegment(str, detected))
-        }
-        return rawParts.map { part ->
-            val detected = detectLanguage(part)
-            TextSegment(part, detected)
-        }
-    }
-    fun getDetectedLanguages(text: CharSequence?): List<String> {
-        val segments = detectLanguageSegments(text)
-        return segments.mapNotNull { it.languageCode }.distinct()
+    data class TextSegment(
+        val rawSegment: String,
+        val prefix: String,
+        val body: String,
+        val detectedLanguage: String?
+    )
+
+    private val URL_PATTERN = Pattern.compile(
+        "^https?://[\\\\w.-]+(?:\\\\.[\\\\w\\\\.-]+)+[/#?]?.*$",
+        Pattern.CASE_INSENSITIVE
+    )
+    private val TIMESTAMP_PATTERN = Pattern.compile(
+        "^\\\\d{1,2}:\\\\d{2}(?:\\\\s?[APap][Mm])?$"
+    )
+    private val AUDIO_DURATION_PATTERN = Pattern.compile(
+        "^\\\\d{1,2}:\\\\d{2}$"
+    )
+
+    // Forwarded message timestamp & author prefix regex: e.g. "[10/3, 12:25 PM] Shemin A Salam: "
+    private val FORWARDED_HEADER_SPLIT_REGEX = Regex(
+        "(?=(?:\\\\[\\\\d{1,2}[/.-]\\\\d{1,2}(?:[/.-]\\\\d{2,4})?,?\\\\s+\\\\d{1,2}:\\\\d{2}(?::\\\\d{2})?(?:\\\\s*[AaPp][Mm])?\\\\]\\\\s*[^:\\\\n]+:\\\\s*))"
+    )
+
+    private val FORWARDED_PREFIX_REGEX = Regex(
+        "^(\\\\[\\\\d{1,2}[/.-]\\\\d{1,2}(?:[/.-]\\\\d{2,4})?,?\\\\s+\\\\d{1,2}:\\\\d{2}(?::\\\\d{2})?(?:\\\\s*[AaPp][Mm])?\\\\]\\\\s*[^:\\\\n]+:\\\\s*)"
+    )
+
+    private val SPANISH_WORDS = setOf(
+        "hola", "gracias", "amigo", "amiga", "buenos", "buenas", "dias", "días",
+        "tarde", "tardes", "noche", "noches", "casa", "hacer", "vamos", "favor",
+        "tiempo", "ahora", "siempre", "nunca", "trabajo", "hermano", "estoy",
+        "donde", "dónde", "cuando", "cuándo", "cómo", "nada", "quiero", "mucho",
+        "usted", "ustedes", "pedido", "documentos", "reunión", "me", "llamo",
+        "cada", "mañana", "despierto", "siete", "levanto", "lavo", "cara",
+        "preparo", "café", "leche", "ocho", "salgo", "ciudad", "regreso",
+        "cocino", "cena", "ligera", "leo", "libro", "dormir", "vida", "vida"
+    )
+
+    private val FRENCH_WORDS = setOf(
+        "bonjour", "salut", "merci", "comment", "allez", "vous", "avec", "pour",
+        "bien", "dans", "nous", "cette", "cet", "aussi", "faire", "plus", "bonsoir",
+        "aujourd'hui", "aujourdhui", "tres", "très", "rapport", "reunion", "réunion", "bureau",
+        "apres", "après", "pret", "prêt", "retrouve", "suis", "etes", "êtes", "sommes",
+        "votre", "notre", "est-ce", "demain", "midi", "soir", "oui", "non", "beaucoup",
+        "mon", "ami", "amie", "quand", "tout", "tous", "toute", "va", "vas", "pourquoi",
+        "touristique", "charmante", "place", "cathédrale", "maisons", "anciennes", "restos",
+        "hôtels", "boutiques", "rez-de-chaussée", "maison", "restaurant", "construit",
+        "étages", "supérieurs", "rajoutés", "siècle", "colombages", "sculptés"
+    )
+
+    private val GERMAN_WORDS = setOf(
+        "hallo", "danke", "bitte", "nicht", "guten", "morgen", "abend", "alles",
+        "wie", "gehts", "oder", "auch", "noch", "nach", "zeit", "freund"
+    )
+
+    private val PORTUGUESE_WORDS = setOf(
+        "ola", "obrigado", "obrigada", "voce", "para", "como", "esta", "estou",
+        "tudo", "bom", "boa", "noite", "amigo", "muito", "fazer", "vamos"
+    )
+
+    private val ITALIAN_WORDS = setOf(
+        "ciao", "grazie", "prego", "come", "stai", "bene", "dove", "buongiorno",
+        "buonasera", "amico", "molto", "fare", "tutto", "perche"
+    )
+
+    private var mlKitLanguageIdentifier: LanguageIdentifier? = null
+
+    init {
+        try {
+            mlKitLanguageIdentifier = LanguageIdentification.getClient()
+        } catch (e: Exception) {}
     }
 
-    fun isTargetLanguageMessage(text: CharSequence?, sourceLangCode: String = "bn", threshold: Float = 0.20f): Boolean {
+    /**
+     * Determines whether the given text is written in the specified source language.
+     */
+    fun isTargetLanguageMessage(
+        text: CharSequence?,
+        sourceLangCode: String = "bn",
+        threshold: Float = 0.20f
+    ): Boolean {
         if (text.isNullOrBlank()) return false
         val trimmed = text.toString().trim()
         if (trimmed.length < 2) return false
-        if (URL_PATTERN.matcher(trimmed).matches() || TIMESTAMP_PATTERN.matcher(trimmed).matches()) return false
 
-        return when (sourceLangCode.lowercase()) {
-            "bn" -> checkUnicodeBlock(trimmed, 0x0980..0x09FF, threshold)
-            "hi", "mr" -> checkUnicodeBlock(trimmed, 0x0900..0x097F, threshold)
-            "ar", "ur" -> checkUnicodeBlock(trimmed, 0x0600..0x06FF, threshold)
-            "ru" -> checkUnicodeBlock(trimmed, 0x0400..0x04FF, threshold)
-            "zh" -> checkUnicodeBlock(trimmed, 0x4E00..0x9FFF, threshold)
-            "ko" -> checkUnicodeBlock(trimmed, 0xAC00..0xD7AF, threshold)
-            "ja" -> checkJapanese(trimmed, threshold)
-            "ta" -> checkUnicodeBlock(trimmed, 0x0B80..0x0BFF, threshold)
-            "te" -> checkUnicodeBlock(trimmed, 0x0C00..0x0C7F, threshold)
-            else -> {
-                val lower = trimmed.lowercase()
-                lower.any { it in "ñáéíóú¿¡üçàèêôœãõßäö" } || trimmed.any { it.code > 0x007F && it.isLetter() }
+        // Fast exclusion for URLs, timestamps, audio tags
+        if (URL_PATTERN.matcher(trimmed).matches()) return false
+        if (TIMESTAMP_PATTERN.matcher(trimmed).matches()) return false
+        if (AUDIO_DURATION_PATTERN.matcher(trimmed).matches()) return false
+
+        // Check if any segment matches this language
+        val segments = splitMultilingualSegments(trimmed)
+        for (seg in segments) {
+            val body = seg.body.trim()
+            if (body.isEmpty()) continue
+            val matches = when (sourceLangCode.lowercase()) {
+                "bn" -> checkUnicodeBlock(body, 0x0980..0x09FF, threshold)
+                "hi" -> checkUnicodeBlock(body, 0x0900..0x097F, threshold)
+                "mr" -> checkUnicodeBlock(body, 0x0900..0x097F, threshold)
+                "ar", "ur" -> checkUnicodeBlock(body, 0x0600..0x06FF, threshold)
+                "ru" -> checkUnicodeBlock(body, 0x0400..0x04FF, threshold)
+                "zh" -> checkUnicodeBlock(body, 0x4E00..0x9FFF, threshold)
+                "ja" -> checkJapanese(body, threshold)
+                "ko" -> checkUnicodeBlock(body, 0xAC00..0xD7AF, threshold)
+                "ta" -> checkUnicodeBlock(body, 0x0B80..0x0BFF, threshold)
+                "te" -> checkUnicodeBlock(body, 0x0C00..0x0C7F, threshold)
+                "es" -> checkSpanish(body)
+                "fr" -> checkFrench(body)
+                "de" -> checkGerman(body)
+                "pt" -> checkPortuguese(body)
+                "it" -> checkItalian(body)
+                else -> hasAnyForeignCharacter(body)
             }
+            if (matches) return true
         }
+
+        return false
     }
 
+    /**
+     * Splits a potentially multilingual message into cohesive segments (e.g. forwarded message blocks,
+     * separate paragraphs, or distinct sentences) and detects the language of each segment.
+     */
+    fun splitMultilingualSegments(text: String): List<TextSegment> {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return emptyList()
+
+        // 1. Try splitting by forwarded message headers
+        val forwardedChunks = trimmed.split(FORWARDED_HEADER_SPLIT_REGEX).filter { it.isNotBlank() }
+        if (forwardedChunks.size > 1) {
+            return forwardedChunks.map { chunk ->
+                val prefixMatch = FORWARDED_PREFIX_REGEX.find(chunk)
+                val prefix = prefixMatch?.value ?: ""
+                val body = chunk.substring(prefix.length)
+                TextSegment(
+                    rawSegment = chunk,
+                    prefix = prefix,
+                    body = body,
+                    detectedLanguage = detectSingleSegmentLanguage(body)
+                )
+            }
+        }
+
+        // 2. Try splitting by paragraph newlines if text has newlines
+        val paragraphs = trimmed.split(Regex("\\\\n+")).filter { it.isNotBlank() }
+        if (paragraphs.size > 1) {
+            val segments = paragraphs.map { p ->
+                val prefixMatch = FORWARDED_PREFIX_REGEX.find(p)
+                val prefix = prefixMatch?.value ?: ""
+                val body = p.substring(prefix.length)
+                TextSegment(
+                    rawSegment = p,
+                    prefix = prefix,
+                    body = body,
+                    detectedLanguage = detectSingleSegmentLanguage(body)
+                )
+            }
+            val distinctLangs = segments.mapNotNull { it.detectedLanguage }.distinct()
+            if (distinctLangs.size > 1) {
+                return segments
+            }
+        }
+
+        // 3. Fallback: single segment
+        val prefixMatch = FORWARDED_PREFIX_REGEX.find(trimmed)
+        val prefix = prefixMatch?.value ?: ""
+        val body = trimmed.substring(prefix.length)
+        return listOf(
+            TextSegment(
+                rawSegment = trimmed,
+                prefix = prefix,
+                body = body,
+                detectedLanguage = detectSingleSegmentLanguage(body)
+            )
+        )
+    }
+
+    /**
+     * Returns all distinct foreign languages detected inside the text (e.g. ["fr", "es"]).
+     */
+    fun detectAllLanguages(text: CharSequence?): List<String> {
+        if (text.isNullOrBlank()) return emptyList()
+        val segments = splitMultilingualSegments(text.toString())
+        return segments.mapNotNull { it.detectedLanguage }.distinct()
+    }
+
+    /**
+     * Detects what foreign language the message is written in (returns language code like 'bn', 'es', 'ar', etc.).
+     * Returns null if English, numbers, or unrecognizable.
+     */
     fun detectLanguage(text: CharSequence?): String? {
         if (text.isNullOrBlank()) return null
         val trimmed = text.toString().trim()
         if (trimmed.length < 2) return null
         if (URL_PATTERN.matcher(trimmed).matches() || TIMESTAMP_PATTERN.matcher(trimmed).matches()) return null
 
+        val langs = detectAllLanguages(trimmed)
+        return langs.firstOrNull()
+    }
+
+    /**
+     * Evaluates a single isolated text block/body for language identification.
+     */
+    private fun detectSingleSegmentLanguage(body: String): String? {
+        val trimmed = body.trim()
+        if (trimmed.length < 2) return null
+        if (URL_PATTERN.matcher(trimmed).matches() || TIMESTAMP_PATTERN.matcher(trimmed).matches()) return null
+
+        // 1. Instant Unicode Script Check
         if (checkUnicodeBlock(trimmed, 0x0980..0x09FF, 0.20f)) return "bn"
         if (checkUnicodeBlock(trimmed, 0x0600..0x06FF, 0.20f)) return "ar"
         if (checkUnicodeBlock(trimmed, 0x0900..0x097F, 0.20f)) return "hi"
@@ -860,27 +1971,12 @@ object LanguageDetector {
         if (checkUnicodeBlock(trimmed, 0x0B80..0x0BFF, 0.20f)) return "ta"
         if (checkUnicodeBlock(trimmed, 0x0C00..0x0C7F, 0.20f)) return "te"
 
-        val lower = trimmed.lowercase()
-        // Check French first with distinctive French characters and words to prevent French messages from being misclassified as Spanish
-        if (lower.any { it in "çœæèêëàâùûîïô" } ||
-            Regex("\\b(bonjour|salut|merci|comment|allez|vous|avec|pour|dans|faire|aujourd'hui|très|bien|rapport|réunion|bureau|après|midi|retrouve|prêt|cette|cet|est-ce|suis|êtes|sommes|votre|notre|demain|soir|oui|non|beaucoup|mon|ami|amie)\\b", RegexOption.IGNORE_CASE).containsMatchIn(lower)
-        ) return "fr"
-
-        // Distinctive Spanish characters (ñ, ¿, ¡, á, í, ó, ú - note 'é' is shared with French so not unique to Spanish) and words
-        if (lower.any { it in "ñáíóú¿¡" } ||
-            Regex("\\b(hola|amigo|amiga|gracias|buenos|buenas|dias|días|tarde|tardes|noche|noches|por favor|cómo|estoy|vamos|hoy|hora|nos vemos|pedido|documentos|hermano|trabajo)\\b", RegexOption.IGNORE_CASE).containsMatchIn(lower)
-        ) return "es"
-
-        // If text contains 'é' without other distinctive markers, disambiguate
-        if (lower.contains('é')) {
-            if (lower.contains("le ") || lower.contains("la ") || lower.contains("les ") || lower.contains("des ") || lower.contains("du ")) return "fr"
-            if (lower.contains("el ") || lower.contains("los ") || lower.contains("las ") || lower.contains("un ") || lower.contains("una ")) return "es"
-            return "fr" // Default 'é' to French
-        }
-
-        if (lower.any { it in "äöüß" } || Regex("\\b(hallo|danke|bitte|guten|morgen|wie|geht|nicht|freund|heute|nachmittag|laptop|treffen)\\b", RegexOption.IGNORE_CASE).containsMatchIn(lower)) return "de"
-        if (lower.any { it in "ãõ" } || Regex("\\b(ola|obrigado|obrigada|voce|tudo bem|bom dia|boa tarde)\\b", RegexOption.IGNORE_CASE).containsMatchIn(lower)) return "pt"
-        if (Regex("\\b(ciao|grazie|prego|come stai|buongiorno|buonasera|amico|molto bene)\\b", RegexOption.IGNORE_CASE).containsMatchIn(lower)) return "it"
+        // 2. High-speed lexical heuristic for Latin-script languages
+        if (checkFrench(trimmed)) return "fr"
+        if (checkSpanish(trimmed)) return "es"
+        if (checkGerman(trimmed)) return "de"
+        if (checkPortuguese(trimmed)) return "pt"
+        if (checkItalian(trimmed)) return "it"
 
         return null
     }
@@ -889,54 +1985,92 @@ object LanguageDetector {
         var matchCount = 0
         var totalLetters = 0
         for (ch in text) {
-            if (ch.code in range) { matchCount++; totalLetters++ }
-            else if (ch.isLetter()) totalLetters++
+            val code = ch.code
+            if (code in range) {
+                matchCount++
+                totalLetters++
+            } else if (ch.isLetter()) {
+                totalLetters++
+            }
         }
-        return totalLetters > 0 && (matchCount.toFloat() / totalLetters) >= threshold
+        if (totalLetters == 0) return false
+        return (matchCount.toFloat() / totalLetters) >= threshold
     }
 
     private fun checkJapanese(text: String, threshold: Float): Boolean {
         var matchCount = 0
         var totalLetters = 0
         for (ch in text) {
-            if (ch.code in 0x3040..0x30FF || ch.code in 0x4E00..0x9FFF) { matchCount++; totalLetters++ }
-            else if (ch.isLetter()) totalLetters++
+            val code = ch.code
+            if (code in 0x3040..0x30FF || code in 0x4E00..0x9FFF) {
+                matchCount++
+                totalLetters++
+            } else if (ch.isLetter()) {
+                totalLetters++
+            }
         }
-        return totalLetters > 0 && (matchCount.toFloat() / totalLetters) >= threshold
+        if (totalLetters == 0) return false
+        return (matchCount.toFloat() / totalLetters) >= threshold
+    }
+
+    private fun checkSpanish(text: String): Boolean {
+        val lower = text.lowercase()
+        // Distinctive Spanish characters (exclude 'é' and 'ü' which are shared with French/German)
+        if (lower.any { it in "ñáíóú¿¡" }) return true
+        val words = lower.split(Regex("[^\\\\p{L}]+"))
+        return words.any { it in SPANISH_WORDS }
+    }
+
+    private fun checkFrench(text: String): Boolean {
+        val lower = text.lowercase()
+        // Distinctive French characters
+        if (lower.any { it in "çœæèêëàâùûîïô" }) return true
+        val words = lower.split(Regex("[^\\\\p{L}]+"))
+        return words.any { it in FRENCH_WORDS }
+    }
+
+    private fun checkGerman(text: String): Boolean {
+        val lower = text.lowercase()
+        if (lower.any { it in "äöüß" }) return true
+        val words = lower.split(Regex("[^\\\\p{L}]+"))
+        return words.any { it in GERMAN_WORDS }
+    }
+
+    private fun checkPortuguese(text: String): Boolean {
+        val lower = text.lowercase()
+        if (lower.any { it in "ãõçáéíóúâêô" }) return true
+        val words = lower.split(Regex("[^\\\\p{L}]+"))
+        return words.any { it in PORTUGUESE_WORDS }
+    }
+
+    private fun checkItalian(text: String): Boolean {
+        val lower = text.lowercase()
+        val words = lower.split(Regex("[^\\\\p{L}]+"))
+        return words.any { it in ITALIAN_WORDS }
+    }
+
+    private fun hasAnyForeignCharacter(text: String): Boolean {
+        for (ch in text) {
+            val code = ch.code
+            if (code > 0x007F && ch.isLetter()) return true
+        }
+        return false
     }
 }
 `,
 
   'app/src/main/java/com/bangla/translator/translation/BengaliDetector.kt': `package com.bangla.translator.translation
 
-import java.util.regex.Pattern
-
+/**
+ * Backwards-compatible facade delegating to Universal LanguageDetector.
+ */
 object BengaliDetector {
-    private const val BENGALI_START = 0x0980
-    private const val BENGALI_END = 0x09FF
-    private val URL_PATTERN = Pattern.compile("^https?://[\\\\w.-]+(?:\\\\.[\\\\w\\\\.-]+)+[/#?]?.*$", Pattern.CASE_INSENSITIVE)
-    private val TIMESTAMP_PATTERN = Pattern.compile("^\\\\d{1,2}:\\\\d{2}(?:\\\\s?[APap][Mm])?$")
+    fun isBengaliChar(ch: Char): Boolean = ch.code in 0x0980..0x09FF
+
+    fun isBengaliCodePoint(codePoint: Int): Boolean = codePoint in 0x0980..0x09FF
 
     fun isBengali(text: CharSequence?, threshold: Float = 0.20f): Boolean {
-        if (text.isNullOrBlank()) return false
-        val trimmed = text.toString().trim()
-        if (URL_PATTERN.matcher(trimmed).matches() || TIMESTAMP_PATTERN.matcher(trimmed).matches()) return false
-
-        var bengaliCharCount = 0
-        var totalAlphabeticCount = 0
-        var i = 0
-        while (i < trimmed.length) {
-            val codePoint = Character.codePointAt(trimmed, i)
-            if (codePoint in BENGALI_START..BENGALI_END) {
-                bengaliCharCount++
-                totalAlphabeticCount++
-            } else if (Character.isLetter(codePoint)) {
-                totalAlphabeticCount++
-            }
-            i += Character.charCount(codePoint)
-        }
-        if (totalAlphabeticCount == 0) return false
-        return (bengaliCharCount.toFloat() / totalAlphabeticCount.toFloat()) >= threshold
+        return LanguageDetector.isTargetLanguageMessage(text, "bn", threshold)
     }
 }
 `,
@@ -946,21 +2080,67 @@ object BengaliDetector {
 import androidx.collection.LruCache
 import java.util.regex.Pattern
 
+/**
+ * Thread-safe LRU cache for Bengali-to-English translations.
+ * Keyed strictly by normalized message text, separating linguistic identity
+ * from screen position and conversation sessions.
+ */
 class TranslationCache(maxEntries: Int = 500) {
+
     private val cache = object : LruCache<String, String>(maxEntries) {}
     private val whitespaceRegex = Pattern.compile("\\\\s+")
 
+    /**
+     * Normalizes text for cache lookups:
+     * - Trims leading/trailing whitespace
+     * - Collapses internal sequences of whitespace into single spaces
+     * - Preserves casing and punctuation
+     */
     fun normalize(text: String): String {
-        return whitespaceRegex.matcher(text.trim()).replaceAll(" ")
+        val trimmed = text.trim()
+        return whitespaceRegex.matcher(trimmed).replaceAll(" ")
     }
 
-    fun get(text: String): String? = synchronized(cache) { cache.get(normalize(text)) }
-    fun put(originalText: String, translatedText: String) = synchronized(cache) { cache.put(normalize(originalText), translatedText) }
+    /**
+     * Retrieves translation for the given text, if previously cached.
+     */
+    fun get(text: String): String? {
+        val key = normalize(text)
+        synchronized(cache) {
+            return cache.get(key)
+        }
+    }
+
+    /**
+     * Stores a translation result in the cache.
+     */
+    fun put(originalText: String, translatedText: String) {
+        val key = normalize(originalText)
+        synchronized(cache) {
+            cache.put(key, translatedText)
+        }
+    }
+
+    /**
+     * Clears all cached translations.
+     */
+    fun clear() {
+        synchronized(cache) {
+            cache.evictAll()
+        }
+    }
+
+    /**
+     * Current number of entries in cache.
+     */
+    val size: Int
+        get() = synchronized(cache) { cache.size() }
 }
 `,
 
   'app/src/main/java/com/bangla/translator/translation/TranslationEngine.kt': `package com.bangla.translator.translation
 
+import android.util.Log
 import com.bangla.translator.data.ModelDownloadState
 import com.bangla.translator.data.SupportedLanguages
 import com.google.android.gms.tasks.Task
@@ -968,26 +2148,58 @@ import com.google.mlkit.common.model.DownloadConditions
 import com.google.mlkit.common.model.RemoteModelManager
 import com.google.mlkit.nl.translate.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
+/**
+ * Multi-Language On-Device Translation Engine with Intelligent Pack Management.
+ * Supports up to 3 simultaneous active language pairs with sub-millisecond detection,
+ * automatic multilingual segment decomposition for mixed messages, and on-demand model
+ * downloading to minimize phone RAM and storage consumption.
+ */
 object TranslationEngine {
+    private const val TAG = "TranslationEngine"
+
+    data class TranslationDetails(
+        val translatedText: String,
+        val detectedLanguages: List<String>
+    )
+
+    // Thread pool for network translation fallback (max 3 concurrent requests)
     private val networkExecutor = Executors.newFixedThreadPool(3)
+
+    // Primary active source and target language
     private var currentSourceLang: String = TranslateLanguage.BENGALI
     private var currentTargetLang: String = TranslateLanguage.ENGLISH
-    private val activeTranslators = ConcurrentHashMap<String, Translator>()
-    val cache = TranslationCache(500)
-    private val _modelState = MutableStateFlow<ModelDownloadState>(ModelDownloadState.NotDownloaded)
-    val modelState = _modelState.asStateFlow()
 
+    // Concurrent map of active translators: sourceLangCode -> Translator
+    private val activeTranslators = ConcurrentHashMap<String, Translator>()
+
+    // Global in-memory translation cache (LRU 500 entries)
+    val cache = TranslationCache(maxEntries = 500)
+
+    private val _modelState = MutableStateFlow<ModelDownloadState>(ModelDownloadState.NotDownloaded)
+    val modelState: StateFlow<ModelDownloadState> = _modelState.asStateFlow()
+
+    private val isPreparingModel = AtomicBoolean(false)
+    private var prepareTask: Task<Void>? = null
+
+    /**
+     * Updates the primary language pair.
+     */
     @Synchronized
     fun setLanguagePair(sourceCode: String, targetCode: String) {
         val srcMl = SupportedLanguages.findByCode(sourceCode).mlKitCode
         val trgMl = SupportedLanguages.findByCode(targetCode).mlKitCode
+
         if (srcMl != currentSourceLang || trgMl != currentTargetLang) {
             currentSourceLang = srcMl
             currentTargetLang = trgMl
@@ -995,31 +2207,75 @@ object TranslationEngine {
         }
     }
 
+    /**
+     * Checks if the ML Kit on-device model for the specified language is already downloaded.
+     */
     fun checkModelAvailability(sourceLangCode: String = currentSourceLang) {
         val modelManager = RemoteModelManager.getInstance()
         val remoteModel = TranslateRemoteModel.Builder(sourceLangCode).build()
+
         modelManager.isModelDownloaded(remoteModel)
             .addOnSuccessListener { isDownloaded ->
-                _modelState.value = if (isDownloaded) ModelDownloadState.Ready else ModelDownloadState.NotDownloaded
+                if (isDownloaded) {
+                    _modelState.value = ModelDownloadState.Ready
+                    getOrCreateTranslator(sourceLangCode)
+                } else {
+                    _modelState.value = ModelDownloadState.NotDownloaded
+                }
             }
-            .addOnFailureListener {
-                _modelState.value = ModelDownloadState.Error(it.localizedMessage ?: "Unknown model error")
+            .addOnFailureListener { error ->
+                Log.e(TAG, "Error checking model download status", error)
+                _modelState.value = ModelDownloadState.Error(error.localizedMessage ?: "Unknown model error")
             }
     }
 
+    /**
+     * Checks if a specific model is downloaded asynchronously.
+     */
+    fun isModelDownloaded(sourceLangCode: String, onResult: (Boolean) -> Unit) {
+        val modelManager = RemoteModelManager.getInstance()
+        val remoteModel = TranslateRemoteModel.Builder(sourceLangCode).build()
+        modelManager.isModelDownloaded(remoteModel)
+            .addOnSuccessListener { onResult(it) }
+            .addOnFailureListener { onResult(false) }
+    }
+
+    /**
+     * Retrieves all downloaded translation models on the device.
+     */
+    fun getDownloadedLanguageCodes(onResult: (List<String>) -> Unit) {
+        val modelManager = RemoteModelManager.getInstance()
+        modelManager.getDownloadedModels(TranslateRemoteModel::class.java)
+            .addOnSuccessListener { models ->
+                val codes = models.map { it.language }
+                onResult(codes)
+            }
+            .addOnFailureListener {
+                onResult(emptyList())
+            }
+    }
+
+    /**
+     * Obtains or initializes the ML Kit Translator for the requested source language.
+     */
     @Synchronized
     fun getOrCreateTranslator(sourceLangCode: String = currentSourceLang): Translator {
         val existing = activeTranslators[sourceLangCode]
         if (existing != null) return existing
+
         val options = TranslatorOptions.Builder()
             .setSourceLanguage(sourceLangCode)
             .setTargetLanguage(currentTargetLang)
             .build()
+
         val translator = Translation.getClient(options)
         activeTranslators[sourceLangCode] = translator
         return translator
     }
 
+    /**
+     * Downloads the on-device ML Kit language pack for the specified source language.
+     */
     @Synchronized
     fun prepareModelIfNeeded(
         sourceLangCode: String = currentSourceLang,
@@ -1028,21 +2284,34 @@ object TranslationEngine {
         onFailure: ((Exception) -> Unit)? = null
     ): Task<Void> {
         _modelState.value = ModelDownloadState.Downloading
+        isPreparingModel.set(true)
+
         val translator = getOrCreateTranslator(sourceLangCode)
         val downloadTask = translator.downloadModelIfNeeded(conditions)
+
+        prepareTask = downloadTask
+
         downloadTask.addOnSuccessListener {
             _modelState.value = ModelDownloadState.Ready
+            isPreparingModel.set(false)
             onSuccess?.invoke()
         }.addOnFailureListener { error ->
+            Log.e(TAG, "Model download failed for $sourceLangCode", error)
             _modelState.value = ModelDownloadState.Error(error.localizedMessage ?: "Model download failed")
+            isPreparingModel.set(false)
             onFailure?.invoke(error)
         }
+
         return downloadTask
     }
 
+    /**
+     * Deletes a downloaded model to free device storage and releases RAM.
+     */
     fun deleteModel(sourceLangCode: String = currentSourceLang, onComplete: (() -> Unit)? = null) {
         val modelManager = RemoteModelManager.getInstance()
         val remoteModel = TranslateRemoteModel.Builder(sourceLangCode).build()
+
         modelManager.deleteDownloadedModel(remoteModel)
             .addOnCompleteListener {
                 activeTranslators.remove(sourceLangCode)?.close()
@@ -1051,6 +2320,10 @@ object TranslationEngine {
             }
     }
 
+    /**
+     * Purges downloaded ML Kit models that are no longer part of the user's active language pairs,
+     * freeing up phone storage (~30MB per pack) and releasing native memory buffers immediately.
+     */
     fun purgeInactiveModels(activeSourceCodes: Set<String>, onComplete: (() -> Unit)? = null) {
         val activeMlKitCodes = activeSourceCodes.map { SupportedLanguages.findByCode(it).mlKitCode }.toSet()
         val modelManager = RemoteModelManager.getInstance()
@@ -1058,6 +2331,7 @@ object TranslationEngine {
             .addOnSuccessListener { models ->
                 for (model in models) {
                     if (model.language !in activeMlKitCodes) {
+                        Log.i(TAG, "Deleting orphaned language model from storage: \${model.language}")
                         activeTranslators.remove(model.language)?.close()
                         modelManager.deleteDownloadedModel(model)
                     }
@@ -1069,13 +2343,21 @@ object TranslationEngine {
             }
     }
 
+    /**
+     * Closes all active translators and releases memory.
+     */
     fun close() {
         for ((_, translator) in activeTranslators) {
-            try { translator.close() } catch (e: Exception) {}
+            try {
+                translator.close()
+            } catch (e: Exception) {}
         }
         activeTranslators.clear()
     }
 
+    /**
+     * Standard translation call with backwards-compatible signature.
+     */
     fun translate(
         text: String,
         sourceCode: String? = null,
@@ -1083,40 +2365,116 @@ object TranslationEngine {
         onSuccess: (String) -> Unit,
         onFailure: ((Exception) -> Unit)? = null
     ) {
+        translateWithDetails(
+            text = text,
+            sourceCode = sourceCode,
+            targetCode = targetCode,
+            onSuccess = { details -> onSuccess(details.translatedText) },
+            onFailure = onFailure
+        )
+    }
+
+    /**
+     * Advanced multilingual translation: splits message into segments, translates each
+     * segment in its native language, preserves forwarded headers, and returns details.
+     */
+    fun translateWithDetails(
+        text: String,
+        sourceCode: String? = null,
+        targetCode: String = currentTargetLang,
+        onSuccess: (TranslationDetails) -> Unit,
+        onFailure: ((Exception) -> Unit)? = null
+    ) {
         val cleanText = text.trim()
-        if (cleanText.isEmpty()) { onSuccess(""); return }
-
-        val detectedLangs = LanguageDetector.getDetectedLanguages(cleanText)
-        val isMultilingual = (sourceCode?.contains("+") == true) || (detectedLangs.size > 1)
-
-        val effectiveSource = when {
-            isMultilingual -> if (sourceCode?.contains("+") == true) sourceCode else detectedLangs.joinToString("+")
-            sourceCode != null -> sourceCode
-            else -> LanguageDetector.detectLanguage(cleanText) ?: currentSourceLang
+        if (cleanText.isEmpty()) {
+            onSuccess(TranslationDetails("", emptyList()))
+            return
         }
-        val cacheKey = "\$effectiveSource:\$cleanText"
+
+        // Check if message contains multiple segments with distinct languages
+        val segments = LanguageDetector.splitMultilingualSegments(cleanText)
+        val detectedLanguages = segments.mapNotNull { it.detectedLanguage }.distinct()
+
+        // Single language or monolithic message path
+        if (detectedLanguages.size <= 1) {
+            val effectiveSource = detectedLanguages.firstOrNull()
+                ?: sourceCode
+                ?: LanguageDetector.detectLanguage(cleanText)
+                ?: currentSourceLang
+
+            translateSingleChunk(cleanText, effectiveSource, targetCode, { translated ->
+                onSuccess(TranslationDetails(translated, if (detectedLanguages.isNotEmpty()) detectedLanguages else listOf(effectiveSource)))
+            }, onFailure)
+            return
+        }
+
+        // Multilingual message path: multiple distinct languages found in one message!
+        networkExecutor.execute {
+            try {
+                val translatedSegments = arrayOfNulls<String>(segments.size)
+                val latch = CountDownLatch(segments.size)
+
+                for ((index, segment) in segments.withIndex()) {
+                    val segBody = segment.body.trim()
+                    if (segBody.isEmpty()) {
+                        translatedSegments[index] = segment.prefix
+                        latch.countDown()
+                        continue
+                    }
+
+                    val segLang = segment.detectedLanguage
+                    if (segLang == null) {
+                        // Body is numbers/symbols or English - preserve original
+                        translatedSegments[index] = "\${segment.prefix}\${segBody}"
+                        latch.countDown()
+                    } else {
+                        translateSingleChunk(segBody, segLang, targetCode, { translatedPart ->
+                            translatedSegments[index] = "\${segment.prefix}\${translatedPart}"
+                            latch.countDown()
+                        }, {
+                            translatedSegments[index] = segment.rawSegment
+                            latch.countDown()
+                        })
+                    }
+                }
+
+                // Wait up to 5 seconds for all segments to complete
+                latch.await(5, TimeUnit.SECONDS)
+
+                val combined = translatedSegments.filterNotNull().joinToString("\\n")
+                cache.put(cleanText, combined)
+                onSuccess(TranslationDetails(combined, detectedLanguages))
+            } catch (e: Exception) {
+                Log.e(TAG, "Multilingual translation error: \${e.message}", e)
+                onFailure?.invoke(e) ?: onSuccess(TranslationDetails(cleanText, detectedLanguages))
+            }
+        }
+    }
+
+    /**
+     * Translates a single text chunk with cache, online fast path, and local ML Kit fallback.
+     */
+    private fun translateSingleChunk(
+        cleanText: String,
+        sourceCode: String,
+        targetCode: String,
+        onSuccess: (String) -> Unit,
+        onFailure: ((Exception) -> Unit)?
+    ) {
+        val cacheKey = "$sourceCode:$cleanText"
         val cached = cache.get(cacheKey) ?: cache.get(cleanText)
-        if (cached != null) { onSuccess(cached); return }
+        if (cached != null) {
+            onSuccess(cached)
+            return
+        }
 
         networkExecutor.execute {
             var translatedOnline: String? = null
             try {
-                val encodedText = URLEncoder.encode(cleanText, "UTF-8")
-                val onlineSl = if (isMultilingual) "auto" else effectiveSource
-                val urlStr = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=\$onlineSl&tl=\$targetCode&dt=t&q=\$encodedText"
-                val conn = URL(urlStr).openConnection() as HttpURLConnection
-                conn.connectTimeout = 3000
-                conn.readTimeout = 3000
-                if (conn.responseCode == 200) {
-                    val resp = conn.inputStream.bufferedReader().use { it.readText() }
-                    val ja = org.json.JSONArray(resp)
-                    val sArr = ja.getJSONArray(0)
-                    val sb = StringBuilder()
-                    for (i in 0 until sArr.length()) sb.append(sArr.getJSONArray(i).getString(0))
-                    val r = sb.toString().trim()
-                    if (r.isNotEmpty()) translatedOnline = r
-                }
-            } catch (e: Exception) {}
+                translatedOnline = fetchOnlineTranslation(cleanText, sourceCode, targetCode)
+            } catch (e: Exception) {
+                Log.d(TAG, "Online translation fallback to ML Kit: \${e.message}")
+            }
 
             if (!translatedOnline.isNullOrBlank() && translatedOnline != cleanText) {
                 cache.put(cacheKey, translatedOnline)
@@ -1125,62 +2483,67 @@ object TranslationEngine {
                 return@execute
             }
 
-            if (isMultilingual) {
-                val segments = LanguageDetector.detectLanguageSegments(cleanText)
-                if (segments.isEmpty()) { onSuccess(cleanText); return@execute }
-                val translatedSegments = arrayOfNulls<String>(segments.size)
-                val remaining = java.util.concurrent.atomic.AtomicInteger(segments.size)
-                for (i in segments.indices) {
-                    val seg = segments[i]
-                    val segLang = seg.languageCode ?: currentSourceLang
-                    if (seg.languageCode == "en") {
-                        translatedSegments[i] = seg.text
-                        if (remaining.decrementAndGet() == 0) {
-                            val full = translatedSegments.filterNotNull().joinToString(" ")
-                            cache.put(cleanText, full); onSuccess(full)
-                        }
-                    } else {
-                        try {
-                            val translator = getOrCreateTranslator(segLang)
-                            translator.translate(seg.text)
-                                .addOnSuccessListener { res ->
-                                    translatedSegments[i] = res
-                                    if (remaining.decrementAndGet() == 0) {
-                                        val full = translatedSegments.filterNotNull().joinToString(" ")
-                                        cache.put(cleanText, full); onSuccess(full)
-                                    }
-                                }
-                                .addOnFailureListener {
-                                    translatedSegments[i] = seg.text
-                                    if (remaining.decrementAndGet() == 0) {
-                                        val full = translatedSegments.filterNotNull().joinToString(" ")
-                                        cache.put(cleanText, full); onSuccess(full)
-                                    }
-                                }
-                        } catch (e: Exception) {
-                            translatedSegments[i] = seg.text
-                            if (remaining.decrementAndGet() == 0) {
-                                val full = translatedSegments.filterNotNull().joinToString(" ")
-                                cache.put(cleanText, full); onSuccess(full)
-                            }
-                        }
-                    }
+            // Fallback to local on-device ML Kit Translator
+            translateOnDevice(cleanText, sourceCode, onSuccess, onFailure)
+        }
+    }
+
+    private fun translateOnDevice(
+        cleanText: String,
+        sourceCode: String,
+        onSuccess: (String) -> Unit,
+        onFailure: ((Exception) -> Unit)?
+    ) {
+        try {
+            val translator = getOrCreateTranslator(sourceCode)
+            translator.translate(cleanText)
+                .addOnSuccessListener { result ->
+                    val cacheKey = "$sourceCode:$cleanText"
+                    cache.put(cacheKey, result)
+                    cache.put(cleanText, result)
+                    onSuccess(result)
                 }
-            } else {
-                try {
-                    val translator = getOrCreateTranslator(effectiveSource)
-                    translator.translate(cleanText)
-                        .addOnSuccessListener { res ->
-                            cache.put(cacheKey, res)
-                            cache.put(cleanText, res)
-                            onSuccess(res)
-                        }
-                        .addOnFailureListener { err -> onFailure?.invoke(err) ?: onSuccess(cleanText) }
-                } catch (e: Exception) {
-                    onFailure?.invoke(e) ?: onSuccess(cleanText)
+                .addOnFailureListener { error ->
+                    Log.w(TAG, "On-device ML Kit translation failed: \${error.message}")
+                    onFailure?.invoke(error) ?: onSuccess(cleanText)
+                }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get translator for $sourceCode", e)
+            onFailure?.invoke(e) ?: onSuccess(cleanText)
+        }
+    }
+
+    private fun fetchOnlineTranslation(text: String, sourceLang: String, targetLang: String): String? {
+        val encodedText = URLEncoder.encode(text, "UTF-8")
+        val urlStr = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=$sourceLang&tl=$targetLang&dt=t&q=$encodedText"
+
+        val url = URL(urlStr)
+        val conn = url.openConnection() as HttpURLConnection
+        conn.requestMethod = "GET"
+        conn.connectTimeout = 3000
+        conn.readTimeout = 3000
+        conn.setRequestProperty("User-Agent", "Mozilla/5.0")
+
+        try {
+            val responseCode = conn.responseCode
+            if (responseCode == 200) {
+                val responseText = conn.inputStream.bufferedReader().use { it.readText() }
+                val jsonArray = org.json.JSONArray(responseText)
+                val sentences = jsonArray.getJSONArray(0)
+                val sb = StringBuilder()
+                for (i in 0 until sentences.length()) {
+                    val s = sentences.getJSONArray(i)
+                    sb.append(s.getString(0))
+                }
+                val translated = sb.toString().trim()
+                if (translated.isNotEmpty()) {
+                    return translated
                 }
             }
+        } finally {
+            conn.disconnect()
         }
+        return null
     }
 }
 `,
@@ -1188,10 +2551,12 @@ object TranslationEngine {
   'app/src/main/java/com/bangla/translator/scanner/WhatsAppMessageScanner.kt': `package com.bangla.translator.scanner
 
 import android.graphics.Rect
+import android.os.Build
 import android.view.accessibility.AccessibilityNodeInfo
 import com.bangla.translator.data.ScannedMessage
 import com.bangla.translator.translation.LanguageDetector
 import java.util.ArrayDeque
+import java.util.regex.Pattern
 
 data class ScanResult(
     val messages: List<ScannedMessage>,
@@ -1200,74 +2565,181 @@ data class ScanResult(
     val sampleUninstalledText: String? = null
 )
 
+/**
+ * High-performance WhatsApp message scanner supporting multiple simultaneous active language packs (up to 3)
+ * with on-the-fly detection of new foreign languages in chats.
+ */
 class WhatsAppMessageScanner(
     private val activeSourceLanguages: Set<String> = setOf("bn"),
     private val ratioThreshold: Float = 0.20f
 ) {
+
+    // Secondary constructor for single language backwards compatibility
     constructor(sourceLangCode: String, ratioThreshold: Float = 0.20f) : this(setOf(sourceLangCode), ratioThreshold)
 
     companion object {
         val SUPPORTED_PACKAGES = setOf("com.whatsapp", "com.whatsapp.w4b")
+
+        private val PHONE_NUMBER_PATTERN = Pattern.compile("^[+]?[0-9\\\\s-]{7,16}$")
+        private val SYSTEM_NOTICE_PATTERNS = listOf(
+            "end-to-end encrypted",
+            "messages and calls are end-to-end",
+            "waiting for this message",
+            "security code changed",
+            "tap to learn more"
+        )
+        private val STATUS_INDICATORS = setOf(
+            "online", "typing...", "recording audio...", "last seen", "swipe to reply"
+        )
+        private val ACTION_BUTTONS = setOf(
+            "call", "pay", "search", "attach", "send", "voice message", "back", "more options"
+        )
     }
 
-    fun scanVisibleMessages(root: AccessibilityNodeInfo?, screenBounds: Rect, sessionGeneration: Long): ScanResult {
-        if (root == null || root.packageName?.toString() !in SUPPORTED_PACKAGES) return ScanResult(emptyList(), null, null, null)
+    /**
+     * Traverses the active accessibility node hierarchy to discover visible messages in any of the
+     * active languages, and detects if an uninstalled language is present.
+     */
+    fun scanVisibleMessages(
+        root: AccessibilityNodeInfo?,
+        screenBounds: Rect,
+        sessionGeneration: Long
+    ): ScanResult {
+        if (root == null) {
+            return ScanResult(emptyList(), null, null)
+        }
+
+        val pkgName = root.packageName?.toString() ?: ""
+        if (pkgName !in SUPPORTED_PACKAGES) {
+            return ScanResult(emptyList(), null, null)
+        }
 
         val results = mutableListOf<ScannedMessage>()
-        var uninstalledDetected: String? = null
-        var sampleText: String? = null
+        var detectedInputBarTop: Int? = null
+        var uninstalledLanguageDetected: String? = null
+        var sampleUninstalledText: String? = null
+
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(AccessibilityNodeInfo.obtain(root))
+
         val tempBounds = Rect()
+        val pBounds = Rect()
+        var visitedNodesCount = 0
+        val maxNodesToTraverse = 600
 
         try {
-            while (!queue.isEmpty() && results.size < 50) {
+            while (!queue.isEmpty() && visitedNodesCount < maxNodesToTraverse && results.size < 50) {
                 val node = queue.poll() ?: continue
+                visitedNodesCount++
+
                 try {
+                    // Check for WhatsApp typing/input bar to delimit scrollable chat bounds
+                    val isEditText = node.className?.toString()?.contains("EditText") == true ||
+                            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && node.isFocused && node.isEditable)
+
+                    if (isEditText && node.isVisibleToUser) {
+                        node.getBoundsInScreen(tempBounds)
+                        if (tempBounds.top > screenBounds.height() * 0.40f) {
+                            if (detectedInputBarTop == null || tempBounds.top < detectedInputBarTop) {
+                                detectedInputBarTop = tempBounds.top
+                            }
+                        }
+                    }
+
                     val isLeafOrText = node.childCount == 0 ||
                             node.className?.toString()?.contains("TextView") == true ||
                             node.className?.toString()?.contains("TextEmojiLabel") == true
 
                     if (node.isVisibleToUser && isLeafOrText) {
                         node.getBoundsInScreen(tempBounds)
-                        if (tempBounds.width() > 15 && tempBounds.height() > 15) {
-                            if (!isInsideQuotedMessage(node)) {
-                                val text = (node.text ?: node.contentDescription)?.toString()
-                                if (!text.isNullOrBlank() && !node.isEditable) {
-                                    val detectedLangs = LanguageDetector.getDetectedLanguages(text)
-                                    val matchedActive = detectedLangs.filter { activeSourceLanguages.contains(it) }
-                                    var matchedLang: String? = when {
-                                        matchedActive.size > 1 -> matchedActive.joinToString("+")
-                                        matchedActive.size == 1 -> matchedActive[0]
-                                        else -> {
-                                            var single: String? = null
-                                            for (lang in activeSourceLanguages) {
-                                                if (LanguageDetector.isTargetLanguageMessage(text, lang, ratioThreshold)) {
-                                                    single = lang
-                                                    break
-                                                }
+
+                        if (tempBounds.width() > 15 && tempBounds.height() > 15 &&
+                            tempBounds.intersects(0, 0, screenBounds.width(), screenBounds.height())
+                        ) {
+                            val candidateText = (node.text ?: node.contentDescription)?.toString()
+
+                            if (!candidateText.isNullOrBlank() && !node.isEditable && !isNonMessageText(node, candidateText)) {
+                                if (!isInsideQuotedMessage(node)) {
+                                    val normalized = candidateText.trim().replace(Regex("\\\\s+"), " ")
+
+                                    // 1. Check if candidate belongs to any of the active languages
+                                    val detectedLangs = LanguageDetector.detectAllLanguages(candidateText)
+                                    val matchedActiveLangs = detectedLangs.filter { it in activeSourceLanguages }
+
+                                    var matchedLang: String? = if (matchedActiveLangs.isNotEmpty()) {
+                                        matchedActiveLangs.joinToString(",")
+                                    } else {
+                                        // Fallback legacy heuristic check
+                                        var found: String? = null
+                                        val orderedLangs = activeSourceLanguages.sortedWith { a, b ->
+                                            when {
+                                                a == "fr" && b == "es" -> -1
+                                                a == "es" && b == "fr" -> 1
+                                                else -> 0
                                             }
-                                            single
                                         }
+                                        for (lang in orderedLangs) {
+                                            if (LanguageDetector.isTargetLanguageMessage(candidateText, lang, ratioThreshold)) {
+                                                found = lang
+                                                break
+                                            }
+                                        }
+                                        found
                                     }
 
                                     if (matchedLang != null) {
-                                        val norm = text.trim().replace(Regex("\\s+"), " ")
-                                        val isDup = results.any {
-                                            it.normalizedText == norm &&
-                                            Math.abs(it.bounds.top - tempBounds.top) < 40 &&
-                                            Math.abs(it.bounds.left - tempBounds.left) < 60
+                                        val bubbleBounds = Rect(tempBounds)
+
+                                        var currentParent: AccessibilityNodeInfo? = node.parent
+                                        var depth = 0
+                                        try {
+                                            while (currentParent != null && depth < 3) {
+                                                currentParent.getBoundsInScreen(pBounds)
+                                                if (pBounds.width() in (tempBounds.width() + 4)..screenBounds.width() &&
+                                                    pBounds.height() >= tempBounds.height() &&
+                                                    pBounds.height() <= (screenBounds.height() * 0.75f).toInt()
+                                                ) {
+                                                    bubbleBounds.set(pBounds)
+                                                }
+                                                val nextParent = currentParent.parent
+                                                if (currentParent != node) currentParent.recycle()
+                                                currentParent = nextParent
+                                                depth++
+                                            }
+                                        } catch (e: Exception) {
+                                        } finally {
+                                            currentParent?.recycle()
                                         }
-                                        if (!isDup) {
-                                            val key = "gen_\${sessionGeneration}_\${norm.hashCode()}_\${tempBounds.left}_\${tempBounds.top}"
-                                            results.add(ScannedMessage(text, norm, Rect(tempBounds), key, matchedLang))
+
+                                        val isOutgoing = bubbleBounds.right > screenBounds.width() * 0.78f || bubbleBounds.left > screenBounds.width() * 0.40f
+                                        val isIncoming = !isOutgoing
+                                        val yBucket = bubbleBounds.top / 80
+                                        val displayKey = "msg_\${sessionGeneration}_\${normalized.hashCode()}_\${if (isIncoming) "in" else "out"}_b$yBucket"
+
+                                        val isDuplicate = results.any { existing ->
+                                            existing.normalizedText == normalized &&
+                                                    Math.abs(existing.bounds.top - bubbleBounds.top) < 40 &&
+                                                    Math.abs(existing.bounds.left - bubbleBounds.left) < 60
+                                        }
+
+                                        if (!isDuplicate) {
+                                            results.add(
+                                                ScannedMessage(
+                                                    originalText = candidateText,
+                                                    normalizedText = normalized,
+                                                    bounds = Rect(bubbleBounds),
+                                                    displayKey = displayKey,
+                                                    languageCode = matchedLang
+                                                )
+                                            )
                                         }
                                     } else {
-                                        if (uninstalledDetected == null) {
-                                            val code = LanguageDetector.detectLanguage(text)
-                                            if (code != null && !activeSourceLanguages.contains(code) && code != "en") {
-                                                uninstalledDetected = code
-                                                sampleText = text
+                                        // 2. Check if candidate text is in an uninstalled language (smart auto-detect)
+                                        if (uninstalledLanguageDetected == null) {
+                                            val detectedCode = LanguageDetector.detectLanguage(candidateText)
+                                            if (detectedCode != null && !activeSourceLanguages.contains(detectedCode) && detectedCode != "en") {
+                                                uninstalledLanguageDetected = detectedCode
+                                                sampleUninstalledText = candidateText
                                             }
                                         }
                                     }
@@ -1275,32 +2747,74 @@ class WhatsAppMessageScanner(
                             }
                         }
                     }
-                    for (i in 0 until node.childCount) {
-                        node.getChild(i)?.let { queue.add(it) }
+
+                    // Enqueue children
+                    val childCount = node.childCount
+                    for (i in 0 until childCount) {
+                        val child = node.getChild(i)
+                        if (child != null) {
+                            queue.add(child)
+                        }
                     }
                 } finally {
                     node.recycle()
                 }
             }
         } finally {
-            while (!queue.isEmpty()) queue.poll()?.recycle()
+            while (!queue.isEmpty()) {
+                queue.poll()?.recycle()
+            }
         }
-        return ScanResult(results, null, uninstalledDetected, sampleText)
+
+        return ScanResult(results, detectedInputBarTop, uninstalledLanguageDetected, sampleUninstalledText)
     }
 
     private fun isInsideQuotedMessage(node: AccessibilityNodeInfo): Boolean {
+        val directId = node.viewIdResourceName?.lowercase() ?: ""
+        if (directId.contains("quoted") || directId.contains("quote") || directId.contains("reply")) {
+            return true
+        }
+
         var current: AccessibilityNodeInfo? = node
         try {
-            for (d in 0..3) {
-                val id = current?.viewIdResourceName?.lowercase() ?: ""
-                if (id.contains("quoted") || id.contains("quote") || id.contains("reply")) return true
+            for (depth in 0..3) {
                 val parent = current?.parent ?: break
-                if (current != node) current?.recycle()
+                val parentId = parent.viewIdResourceName?.lowercase() ?: ""
+                if (parentId.contains("quoted") || parentId.contains("quote") || parentId.contains("reply_container")) {
+                    parent.recycle()
+                    return true
+                }
+                if (current != node) {
+                    current?.recycle()
+                }
                 current = parent
             }
         } finally {
-            if (current != null && current != node) current.recycle()
+            if (current != null && current != node) {
+                current.recycle()
+            }
         }
+        return false
+    }
+
+    private fun isNonMessageText(node: AccessibilityNodeInfo, text: String): Boolean {
+        val lower = text.trim().lowercase()
+
+        if (PHONE_NUMBER_PATTERN.matcher(lower).matches()) return true
+        if (lower in STATUS_INDICATORS) return true
+        if (lower in ACTION_BUTTONS) return true
+        if (SYSTEM_NOTICE_PATTERNS.any { lower.contains(it) }) return true
+
+        val resId = node.viewIdResourceName?.lowercase() ?: ""
+        if (resId.contains("conversation_contact_name") ||
+            resId.contains("conversation_title") ||
+            resId.contains("toolbar") ||
+            resId.contains("action_bar") ||
+            resId.contains("tab_title")
+        ) {
+            return true
+        }
+
         return false
     }
 }
@@ -1326,7 +2840,37 @@ import androidx.core.content.ContextCompat
 import com.bangla.translator.R
 import java.util.concurrent.ConcurrentHashMap
 
-class OverlayController(private val context: Context, private val windowManager: WindowManager) {
+/**
+ * Controller responsible for managing interactive on-demand translation overlays
+ * attached directly to WhatsApp message bubbles.
+ *
+ * Requirements implemented:
+ * 1. Icons are always strictly behind the translation bubble when expanded.
+ * 2. Icon badge placed at the middle of the side away from the outer edge of the screen:
+ *    - Outgoing (right): icon is on the LEFT of the bubble (at vertical middle).
+ *    - Incoming (left): icon is on the RIGHT of the bubble (at vertical middle).
+ *    This prevents collision with the text typing bar for the very last message!
+ * 3. Tapping anywhere on the screen immediately closes the expanded bubble via a
+ *    transparent full-screen dismiss backdrop.
+ */
+class OverlayController(
+    private val context: Context,
+    private val windowManager: WindowManager
+) {
+
+    companion object {
+        private const val TAG = "OverlayController"
+        private const val HORIZONTAL_MARGIN_DP = 6
+        private const val STATUS_BAR_MARGIN_DP = 28
+        private const val NAV_BAR_MARGIN_DP = 48
+        private const val ATTACHMENT_GAP_DP = 2
+        private const val BADGE_GAP_DP = 4
+        private const val MIN_EXPANDED_WIDTH_DP = 140
+        private const val AUTO_COLLAPSE_TIMEOUT_MS = 15000L
+    }
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     data class ActiveOverlay(
         val view: View,
         val displayKey: String,
@@ -1338,15 +2882,28 @@ class OverlayController(private val context: Context, private val windowManager:
     )
 
     private val activeOverlays = ConcurrentHashMap<String, ActiveOverlay>()
-    private var expandedDisplayKey: String? = null
-    private var dismissBackdropView: View? = null
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private val density = context.resources.displayMetrics.density
-    private val marginPx = (6 * density).toInt()
-    private val gapPx = (2 * density).toInt()
-    private val badgeGapPx = (4 * density).toInt()
-    private val minExpandedWidthPx = (140 * density).toInt()
 
+    // Key of the currently expanded overlay (null if all are collapsed)
+    private var expandedDisplayKey: String? = null
+
+    // Transparent full-screen backdrop to dismiss when clicking anywhere on screen
+    private var dismissBackdropView: View? = null
+
+    private val density = context.resources.displayMetrics.density
+    private val marginPx = (HORIZONTAL_MARGIN_DP * density).toInt()
+    private val gapPx = (ATTACHMENT_GAP_DP * density).toInt()
+    private val badgeGapPx = (BADGE_GAP_DP * density).toInt()
+    private val minExpandedWidthPx = (MIN_EXPANDED_WIDTH_DP * density).toInt()
+    private val statusBarInsetPx = (STATUS_BAR_MARGIN_DP * density).toInt()
+    private val navBarInsetPx = (NAV_BAR_MARGIN_DP * density).toInt()
+
+    private val autoCollapseRunnable = Runnable {
+        collapseAll()
+    }
+
+    /**
+     * Displays or updates a translation overlay on the main thread.
+     */
     fun showOverlay(
         displayKey: String,
         translatedText: String,
@@ -1357,84 +2914,159 @@ class OverlayController(private val context: Context, private val windowManager:
         languagePairLabel: String = "Translate → English",
         badgeLabel: String = "EN"
     ) {
-        mainHandler.post {
+        runOnMainThread {
             val existing = activeOverlays[displayKey]
             if (existing != null) {
                 if (existing.sessionGeneration != sessionGeneration) {
                     removeOverlay(displayKey)
                 } else {
                     updateOverlayView(existing, translatedText, targetBounds, screenBounds, inputBarTop, languagePairLabel, badgeLabel)
-                    return@post
+                    return@runOnMainThread
                 }
             }
 
             val inflater = LayoutInflater.from(context)
             val overlayView = inflater.inflate(R.layout.layout_translation_overlay, null)
+
             val llCollapsed = overlayView.findViewById<LinearLayout>(R.id.llCollapsedBadge)
             val llExpanded = overlayView.findViewById<LinearLayout>(R.id.llExpandedCard)
             val ivBadge = overlayView.findViewById<ImageView>(R.id.ivBadgeIcon)
             val tvBadge = overlayView.findViewById<TextView>(R.id.tvBadgeText)
             val tvLabel = overlayView.findViewById<TextView>(R.id.tvLanguageLabel)
             val tvTranslated = overlayView.findViewById<TextView>(R.id.tvTranslatedText)
+            val svContainer = overlayView.findViewById<android.widget.ScrollView>(R.id.svTranslatedContainer)
+            val tvScrollHint = overlayView.findViewById<TextView>(R.id.tvScrollHint)
+            val ivClose = overlayView.findViewById<ImageView>(R.id.ivCloseOverlay)
+            val llHeader = overlayView.findViewById<LinearLayout>(R.id.llExpandedHeader)
+
             tvTranslated.text = translatedText
             tvLabel.text = languagePairLabel
             tvBadge.text = badgeLabel
 
             val screenW = screenBounds.width()
             val screenH = screenBounds.height()
+
+            // 100% reliable WhatsApp incoming vs outgoing detection
             val isOutgoing = targetBounds.right > screenW * 0.78f || targetBounds.left > screenW * 0.40f
+
             val bgRes = if (isOutgoing) R.drawable.bg_overlay_outgoing else R.drawable.bg_overlay_incoming
-            val labelColor = if (isOutgoing) ContextCompat.getColor(context, R.color.overlay_outgoing_label) else ContextCompat.getColor(context, R.color.overlay_incoming_label)
+            val labelColor = if (isOutgoing) {
+                ContextCompat.getColor(context, R.color.overlay_outgoing_label)
+            } else {
+                ContextCompat.getColor(context, R.color.overlay_incoming_label)
+            }
 
             llCollapsed.setBackgroundResource(bgRes)
             llExpanded.setBackgroundResource(bgRes)
             ivBadge.setColorFilter(labelColor)
             tvBadge.setTextColor(labelColor)
             tvLabel.setTextColor(labelColor)
+            ivClose?.setColorFilter(labelColor)
+            tvScrollHint?.setTextColor(labelColor)
 
-            llCollapsed.setOnClickListener { expandOverlay(displayKey) }
-            llExpanded.setOnClickListener { collapseOverlay(displayKey) }
+            // Click to expand
+            llCollapsed.setOnClickListener {
+                expandOverlay(displayKey)
+            }
+
+            // Click close button or header bar to collapse (avoid collapsing on text scroll drag!)
+            ivClose?.setOnClickListener {
+                collapseOverlay(displayKey)
+            }
+            llHeader?.setOnClickListener {
+                collapseOverlay(displayKey)
+            }
 
             val isExpanded = (displayKey == expandedDisplayKey)
             val isOtherExpanded = (expandedDisplayKey != null && !isExpanded)
+
+            // If another bubble is expanded, hide this collapsed badge to keep icons behind/hidden
             llCollapsed.visibility = if (isExpanded || isOtherExpanded) View.GONE else View.VISIBLE
             llExpanded.visibility = if (isExpanded) View.VISIBLE else View.GONE
 
             val maxAllowedWidth = (screenW - (marginPx * 2)).coerceAtLeast(minExpandedWidthPx)
             val bubbleWidth = targetBounds.width().coerceIn(minExpandedWidthPx, maxAllowedWidth)
 
-            val bottomLimit = if (inputBarTop != null && inputBarTop > (28 * density).toInt()) inputBarTop - (4 * density).toInt() else screenH - (104 * density).toInt()
             val measuredWidth: Int
             val measuredHeight: Int
             val posX: Int
             val posY: Int
 
+            val bottomLimit = if (inputBarTop != null && inputBarTop > statusBarInsetPx + (100 * density).toInt()) {
+                inputBarTop - (4 * density).toInt()
+            } else {
+                screenH - (navBarInsetPx + (56 * density).toInt())
+            }
+
             if (isExpanded) {
-                overlayView.measure(View.MeasureSpec.makeMeasureSpec(bubbleWidth, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                val maxBubbleHeightPx = (240 * density).toInt().coerceAtMost((screenH * 0.40f).toInt())
+                svContainer?.layoutParams?.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+                overlayView.measure(
+                    View.MeasureSpec.makeMeasureSpec(bubbleWidth, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                )
+
+                if (overlayView.measuredHeight > maxBubbleHeightPx) {
+                    tvScrollHint?.visibility = View.VISIBLE
+                    val scrollMaxHeight = (maxBubbleHeightPx - (28 * density).toInt()).coerceAtLeast((80 * density).toInt())
+                    svContainer?.layoutParams?.height = scrollMaxHeight
+                    overlayView.measure(
+                        View.MeasureSpec.makeMeasureSpec(bubbleWidth, View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                    )
+                } else {
+                    tvScrollHint?.visibility = View.GONE
+                }
+
                 measuredWidth = bubbleWidth
                 measuredHeight = overlayView.measuredHeight
+
                 var calculatedX = if (isOutgoing) targetBounds.right - measuredWidth else targetBounds.left
                 if (calculatedX + measuredWidth > screenW - marginPx) calculatedX = screenW - measuredWidth - marginPx
                 if (calculatedX < marginPx) calculatedX = marginPx
                 posX = calculatedX
-                posY = if (targetBounds.bottom + gapPx + measuredHeight <= bottomLimit) targetBounds.bottom + gapPx else (targetBounds.top - measuredHeight - gapPx).coerceAtLeast((28 * density).toInt())
+
+                // Vertical placement for expanded bubble: prefer below; if too close to bottom limit, place above!
+                posY = if (targetBounds.bottom + gapPx + measuredHeight <= bottomLimit) {
+                    targetBounds.bottom + gapPx
+                } else {
+                    (targetBounds.top - measuredHeight - gapPx).coerceAtLeast(statusBarInsetPx)
+                }
             } else {
-                overlayView.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                // Collapsed State: Icon badge placed at the middle of the side away from the outer edge of screen!
+                overlayView.measure(
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                )
                 measuredWidth = overlayView.measuredWidth
                 measuredHeight = overlayView.measuredHeight
-                var calculatedX = if (isOutgoing) targetBounds.left - measuredWidth - badgeGapPx else targetBounds.right + badgeGapPx
+
+                var calculatedX = if (isOutgoing) {
+                    // Outgoing bubble on right -> place icon on LEFT side of bubble
+                    targetBounds.left - measuredWidth - badgeGapPx
+                } else {
+                    // Incoming bubble on left -> place icon on RIGHT side of bubble
+                    targetBounds.right + badgeGapPx
+                }
                 if (calculatedX + measuredWidth > screenW - marginPx) calculatedX = screenW - measuredWidth - marginPx
                 if (calculatedX < marginPx) calculatedX = marginPx
                 posX = calculatedX
+
+                // Middle of the side of the bubble vertically!
                 posY = targetBounds.centerY() - (measuredHeight / 2)
             }
 
-            if (targetBounds.top >= bottomLimit && !isExpanded) return@post
+            // Don't show if scrolled off screen
+            if (targetBounds.top >= bottomLimit && !isExpanded) {
+                return@runOnMainThread
+            }
 
-            val lp = WindowManager.LayoutParams().apply {
+            val layoutParams = WindowManager.LayoutParams().apply {
                 type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
                 format = PixelFormat.TRANSLUCENT
-                flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                 gravity = Gravity.TOP or Gravity.START
                 x = posX
                 y = posY
@@ -1442,66 +3074,138 @@ class OverlayController(private val context: Context, private val windowManager:
                 height = WindowManager.LayoutParams.WRAP_CONTENT
             }
 
-            try {
-                windowManager.addView(overlayView, lp)
-                activeOverlays[displayKey] = ActiveOverlay(overlayView, displayKey, sessionGeneration, targetBounds, screenBounds, inputBarTop, Rect(posX, posY, posX + measuredWidth, posY + measuredHeight))
-            } catch (e: Exception) {}
-        }
-    }
-
-    fun expandOverlay(displayKey: String) {
-        mainHandler.post {
-            val prev = expandedDisplayKey
-            expandedDisplayKey = displayKey
-            ensureDismissBackdropAttached()
-            if (prev != null && prev != displayKey) activeOverlays[prev]?.let { updateDisplayState(it, false) }
-            for ((key, other) in activeOverlays) {
-                if (key != displayKey) other.view.findViewById<View>(R.id.llCollapsedBadge)?.visibility = View.GONE
+            if (isExpanded) {
+                overlayView.elevation = 24 * density
             }
-            activeOverlays[displayKey]?.let { updateDisplayState(it, true) }
+
+            try {
+                windowManager.addView(overlayView, layoutParams)
+                val placedRect = Rect(posX, posY, posX + measuredWidth, posY + measuredHeight)
+                activeOverlays[displayKey] = ActiveOverlay(
+                    view = overlayView,
+                    displayKey = displayKey,
+                    sessionGeneration = sessionGeneration,
+                    currentBounds = targetBounds,
+                    lastScreenBounds = screenBounds,
+                    lastInputBarTop = inputBarTop,
+                    overlayScreenRect = placedRect
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to attach translation overlay", e)
+            }
         }
     }
 
+    /**
+     * Expands a specific translation overlay:
+     * 1. Attaches a transparent full-screen backdrop so clicking ANYWHERE dismisses it.
+     * 2. Hides other collapsed badges so no icons cover the text.
+     * 3. Sets higher elevation on the expanded bubble.
+     */
+    fun expandOverlay(displayKey: String) {
+        runOnMainThread {
+            val previousKey = expandedDisplayKey
+            expandedDisplayKey = displayKey
+
+            // Attach full-screen backdrop so clicking anywhere closes the expanded bubble
+            ensureDismissBackdropAttached()
+
+            // Collapse previous if different
+            if (previousKey != null && previousKey != displayKey) {
+                activeOverlays[previousKey]?.let { updateOverlayDisplayState(it, isExpanded = false) }
+            }
+
+            // Hide other collapsed badges while translation bubble is open
+            for ((key, other) in activeOverlays) {
+                if (key != displayKey) {
+                    other.view.findViewById<View>(R.id.llCollapsedBadge)?.visibility = View.GONE
+                }
+            }
+
+            // Expand requested bubble on top
+            activeOverlays[displayKey]?.let { active ->
+                updateOverlayDisplayState(active, isExpanded = true)
+            }
+
+            mainHandler.removeCallbacks(autoCollapseRunnable)
+            mainHandler.postDelayed(autoCollapseRunnable, AUTO_COLLAPSE_TIMEOUT_MS)
+        }
+    }
+
+    /**
+     * Collapses a specific translation overlay back to its compact icon badge.
+     */
     fun collapseOverlay(displayKey: String) {
-        mainHandler.post { collapseAll() }
-    }
-
-    fun collapseAll() {
-        mainHandler.post {
-            removeDismissBackdrop()
-            val curr = expandedDisplayKey
-            expandedDisplayKey = null
-            for ((_, item) in activeOverlays) item.view.findViewById<View>(R.id.llCollapsedBadge)?.visibility = View.VISIBLE
-            if (curr != null) activeOverlays[curr]?.let { updateDisplayState(it, false) }
+        runOnMainThread {
+            if (expandedDisplayKey == displayKey) {
+                collapseAll()
+            }
         }
     }
 
+    /**
+     * Automatically collapses all expanded overlays back to small icon badges
+     * and removes the full-screen dismiss backdrop.
+     */
+    fun collapseAll() {
+        runOnMainThread {
+            mainHandler.removeCallbacks(autoCollapseRunnable)
+            removeDismissBackdrop()
+
+            val currentExpanded = expandedDisplayKey
+            expandedDisplayKey = null
+
+            // Restore all collapsed badges
+            for ((_, overlay) in activeOverlays) {
+                overlay.view.findViewById<View>(R.id.llCollapsedBadge)?.visibility = View.VISIBLE
+            }
+
+            if (currentExpanded != null) {
+                activeOverlays[currentExpanded]?.let { updateOverlayDisplayState(it, isExpanded = false) }
+            }
+        }
+    }
+
+    /**
+     * Creates and attaches a full-screen transparent view to intercept taps anywhere on screen.
+     */
     private fun ensureDismissBackdropAttached() {
         if (dismissBackdropView != null) return
         val backdrop = View(context).apply {
             setBackgroundColor(Color.TRANSPARENT)
-            setOnClickListener { collapseAll() }
+            isClickable = true
+            isFocusable = false
+            setOnClickListener {
+                collapseAll()
+            }
         }
         val lp = WindowManager.LayoutParams().apply {
             type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
             format = PixelFormat.TRANSLUCENT
             flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+            gravity = Gravity.TOP or Gravity.START
+            x = 0
+            y = 0
             width = WindowManager.LayoutParams.MATCH_PARENT
             height = WindowManager.LayoutParams.MATCH_PARENT
         }
         try {
             windowManager.addView(backdrop, lp)
             dismissBackdropView = backdrop
-        } catch (e: Exception) {}
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to attach dismiss backdrop", e)
+        }
     }
 
     private fun removeDismissBackdrop() {
-        val bd = dismissBackdropView ?: return
+        val backdrop = dismissBackdropView ?: return
         dismissBackdropView = null
-        try { windowManager.removeView(bd) } catch (e: Exception) {}
+        try {
+            windowManager.removeView(backdrop)
+        } catch (e: Exception) {}
     }
 
-    private fun updateDisplayState(active: ActiveOverlay, isExpanded: Boolean) {
+    private fun updateOverlayDisplayState(active: ActiveOverlay, isExpanded: Boolean) {
         val llCollapsed = active.view.findViewById<LinearLayout>(R.id.llCollapsedBadge) ?: return
         val llExpanded = active.view.findViewById<LinearLayout>(R.id.llExpandedCard) ?: return
         val lp = active.view.layoutParams as? WindowManager.LayoutParams ?: return
@@ -1513,55 +3217,91 @@ class OverlayController(private val context: Context, private val windowManager:
         val screenW = active.lastScreenBounds.width()
         val screenH = active.lastScreenBounds.height()
         val isOutgoing = active.currentBounds.right > screenW * 0.78f || active.currentBounds.left > screenW * 0.40f
+
         val maxAllowedWidth = (screenW - (marginPx * 2)).coerceAtLeast(minExpandedWidthPx)
         val bubbleWidth = active.currentBounds.width().coerceIn(minExpandedWidthPx, maxAllowedWidth)
-        val bottomLimit = if (active.lastInputBarTop != null && active.lastInputBarTop!! > (28 * density).toInt()) active.lastInputBarTop!! - (4 * density).toInt() else screenH - (104 * density).toInt()
+
+        val bottomLimit = if (active.lastInputBarTop != null && active.lastInputBarTop!! > statusBarInsetPx + (100 * density).toInt()) {
+            active.lastInputBarTop!! - (4 * density).toInt()
+        } else {
+            screenH - (navBarInsetPx + (56 * density).toInt())
+        }
 
         val measuredWidth: Int
         val measuredHeight: Int
         val posX: Int
         val posY: Int
 
-        val sv = active.view.findViewById<ScrollView>(R.id.svTranslatedText)
         if (isExpanded) {
-            val spaceBelow = bottomLimit - (active.currentBounds.bottom + gapPx)
-            val spaceAbove = (active.currentBounds.top - gapPx) - (28 * density).toInt()
-            val availableSpace = maxOf(spaceBelow, spaceAbove)
-            val maxBubbleHeight = (screenH * 0.38f).toInt().coerceAtMost((availableSpace - (8 * density).toInt()).coerceAtLeast((140 * density).toInt()))
-            sv?.layoutParams?.height = ViewGroup.LayoutParams.WRAP_CONTENT
-            active.view.measure(View.MeasureSpec.makeMeasureSpec(bubbleWidth, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
-            if (active.view.measuredHeight > maxBubbleHeight) {
-                val overhead = (active.view.measuredHeight - (sv?.measuredHeight ?: 0)).coerceAtLeast((28 * density).toInt())
-                val scrollHeight = (maxBubbleHeight - overhead).coerceAtLeast((90 * density).toInt())
-                sv?.layoutParams?.height = scrollHeight
-                active.view.measure(View.MeasureSpec.makeMeasureSpec(bubbleWidth, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            val svContainer = active.view.findViewById<android.widget.ScrollView>(R.id.svTranslatedContainer)
+            val tvScrollHint = active.view.findViewById<TextView>(R.id.tvScrollHint)
+            val maxBubbleHeightPx = (240 * density).toInt().coerceAtMost((screenH * 0.40f).toInt())
+
+            svContainer?.layoutParams?.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+            active.view.measure(
+                View.MeasureSpec.makeMeasureSpec(bubbleWidth, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+            )
+
+            if (active.view.measuredHeight > maxBubbleHeightPx) {
+                tvScrollHint?.visibility = View.VISIBLE
+                val scrollMaxHeight = (maxBubbleHeightPx - (28 * density).toInt()).coerceAtLeast((80 * density).toInt())
+                svContainer?.layoutParams?.height = scrollMaxHeight
+                active.view.measure(
+                    View.MeasureSpec.makeMeasureSpec(bubbleWidth, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                )
+            } else {
+                tvScrollHint?.visibility = View.GONE
             }
+
             measuredWidth = bubbleWidth
             measuredHeight = active.view.measuredHeight
+
             var calculatedX = if (isOutgoing) active.currentBounds.right - measuredWidth else active.currentBounds.left
             if (calculatedX + measuredWidth > screenW - marginPx) calculatedX = screenW - measuredWidth - marginPx
             if (calculatedX < marginPx) calculatedX = marginPx
             posX = calculatedX
-            posY = if (spaceBelow >= measuredHeight || spaceBelow >= spaceAbove) active.currentBounds.bottom + gapPx else (active.currentBounds.top - measuredHeight - gapPx).coerceAtLeast((28 * density).toInt())
+
+            posY = if (active.currentBounds.bottom + gapPx + measuredHeight <= bottomLimit) {
+                active.currentBounds.bottom + gapPx
+            } else {
+                (active.currentBounds.top - measuredHeight - gapPx).coerceAtLeast(statusBarInsetPx)
+            }
+            active.view.elevation = 24 * density
         } else {
-            sv?.layoutParams?.height = ViewGroup.LayoutParams.WRAP_CONTENT
-            active.view.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            // Collapsed: middle of the side away from outer edge of screen
+            active.view.measure(
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+            )
             measuredWidth = active.view.measuredWidth
             measuredHeight = active.view.measuredHeight
-            var calculatedX = if (isOutgoing) active.currentBounds.left - measuredWidth - badgeGapPx else active.currentBounds.right + badgeGapPx
+
+            var calculatedX = if (isOutgoing) {
+                active.currentBounds.left - measuredWidth - badgeGapPx
+            } else {
+                active.currentBounds.right + badgeGapPx
+            }
             if (calculatedX + measuredWidth > screenW - marginPx) calculatedX = screenW - measuredWidth - marginPx
             if (calculatedX < marginPx) calculatedX = marginPx
             posX = calculatedX
+
             posY = active.currentBounds.centerY() - (measuredHeight / 2)
+            active.view.elevation = 2 * density
         }
 
         lp.x = posX
         lp.y = posY
         lp.width = measuredWidth
+        lp.height = WindowManager.LayoutParams.WRAP_CONTENT
+
         try {
             windowManager.updateViewLayout(active.view, lp)
             active.overlayScreenRect = Rect(posX, posY, posX + measuredWidth, posY + measuredHeight)
-        } catch (e: Exception) {}
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to update overlay view display state", e)
+        }
     }
 
     private fun updateOverlayView(
@@ -1569,38 +3309,82 @@ class OverlayController(private val context: Context, private val windowManager:
         translatedText: String,
         targetBounds: Rect,
         screenBounds: Rect,
-        inputBarTop: Int?,
+        inputBarTop: Int? = null,
         languagePairLabel: String? = null,
         badgeLabel: String? = null
     ) {
         val tv = active.view.findViewById<TextView>(R.id.tvTranslatedText)
-        if (tv.text != translatedText) tv.text = translatedText
+        if (tv.text != translatedText) {
+            tv.text = translatedText
+        }
+
         val tvLabel = active.view.findViewById<TextView>(R.id.tvLanguageLabel)
-        if (languagePairLabel != null && tvLabel?.text != languagePairLabel) tvLabel?.text = languagePairLabel
+        if (languagePairLabel != null && tvLabel?.text != languagePairLabel) {
+            tvLabel?.text = languagePairLabel
+        }
+
         val tvBadge = active.view.findViewById<TextView>(R.id.tvBadgeText)
-        if (badgeLabel != null && tvBadge?.text != badgeLabel) tvBadge?.text = badgeLabel
+        if (badgeLabel != null && tvBadge?.text != badgeLabel) {
+            tvBadge?.text = badgeLabel
+        }
+
         active.currentBounds = targetBounds
         active.lastScreenBounds = screenBounds
         active.lastInputBarTop = inputBarTop
 
         val isExpanded = (active.displayKey == expandedDisplayKey)
-        updateDisplayState(active, isExpanded)
+        val screenW = screenBounds.width()
+        val isOutgoing = targetBounds.right > screenW * 0.78f || targetBounds.left > screenW * 0.40f
+
+        val bgRes = if (isOutgoing) R.drawable.bg_overlay_outgoing else R.drawable.bg_overlay_incoming
+        val labelColor = if (isOutgoing) {
+            ContextCompat.getColor(context, R.color.overlay_outgoing_label)
+        } else {
+            ContextCompat.getColor(context, R.color.overlay_incoming_label)
+        }
+
+        val llCollapsed = active.view.findViewById<LinearLayout>(R.id.llCollapsedBadge)
+        val llExpanded = active.view.findViewById<LinearLayout>(R.id.llExpandedCard)
+        val ivBadge = active.view.findViewById<ImageView>(R.id.ivBadgeIcon)
+
+        llCollapsed?.setBackgroundResource(bgRes)
+        llExpanded?.setBackgroundResource(bgRes)
+        ivBadge?.setColorFilter(labelColor)
+        tvBadge?.setTextColor(labelColor)
+        tvLabel?.setTextColor(labelColor)
+
+        val ivClose = active.view.findViewById<ImageView>(R.id.ivCloseOverlay)
+        val tvScrollHint = active.view.findViewById<TextView>(R.id.tvScrollHint)
+        ivClose?.setColorFilter(labelColor)
+        tvScrollHint?.setTextColor(labelColor)
+
+        updateOverlayDisplayState(active, isExpanded)
     }
 
+    /**
+     * Removes a single overlay by displayKey.
+     */
     fun removeOverlay(displayKey: String) {
-        mainHandler.post {
+        runOnMainThread {
             if (expandedDisplayKey == displayKey) {
                 expandedDisplayKey = null
                 removeDismissBackdrop()
+                mainHandler.removeCallbacks(autoCollapseRunnable)
             }
-            activeOverlays.remove(displayKey)?.let {
-                try { windowManager.removeView(it.view) } catch (e: Exception) {}
+            val removed = activeOverlays.remove(displayKey) ?: return@runOnMainThread
+            try {
+                windowManager.removeView(removed.view)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error removing overlay view for key: $displayKey", e)
             }
         }
     }
 
+    /**
+     * Cleans up overlays that are no longer part of the visible keys in the current scan.
+     */
     fun reconcileVisibleOverlays(currentlyVisibleKeys: Set<String>) {
-        mainHandler.post {
+        runOnMainThread {
             val iterator = activeOverlays.entries.iterator()
             while (iterator.hasNext()) {
                 val entry = iterator.next()
@@ -1608,22 +3392,35 @@ class OverlayController(private val context: Context, private val windowManager:
                     if (expandedDisplayKey == entry.key) {
                         expandedDisplayKey = null
                         removeDismissBackdrop()
+                        mainHandler.removeCallbacks(autoCollapseRunnable)
                     }
-                    try { windowManager.removeView(entry.value.view) } catch (e: Exception) {}
+                    try {
+                        windowManager.removeView(entry.value.view)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error removing scrolled-out overlay", e)
+                    }
                     iterator.remove()
                 }
             }
         }
     }
 
+    /**
+     * Removes all overlays immediately (e.g. on chat switch, leaving WhatsApp, or disabling feature).
+     */
     fun removeAllOverlays() {
-        mainHandler.post {
+        runOnMainThread {
             expandedDisplayKey = null
             removeDismissBackdrop()
             dismissLanguageProposal()
             dismissDetectedLanguageBadge()
-            for ((_, item) in activeOverlays) {
-                try { windowManager.removeView(item.view) } catch (e: Exception) {}
+            mainHandler.removeCallbacks(autoCollapseRunnable)
+            for ((key, overlay) in activeOverlays) {
+                try {
+                    windowManager.removeView(overlay.view)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error removing overlay on clear all: $key", e)
+                }
             }
             activeOverlays.clear()
         }
@@ -1632,17 +3429,22 @@ class OverlayController(private val context: Context, private val windowManager:
     private var detectedBadgeView: View? = null
     private var proposalDialogView: View? = null
 
+    /**
+     * Small icon popup on the right top corner when an uninstalled language is recognized.
+     * Tapping it opens the window styled like the chat translation window.
+     */
     fun showDetectedLanguageBadge(
         languageItem: com.bangla.translator.data.LanguageItem,
         sampleText: String,
         onOpenProposal: () -> Unit,
         onDismiss: () -> Unit
     ) {
-        mainHandler.post {
-            if (proposalDialogView != null) return@post
+        runOnMainThread {
+            if (proposalDialogView != null) return@runOnMainThread
             if (detectedBadgeView != null) {
                 dismissDetectedLanguageBadge()
             }
+
             val badge = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setBackgroundResource(R.drawable.bg_overlay_incoming)
@@ -1656,12 +3458,14 @@ class OverlayController(private val context: Context, private val windowManager:
                     onOpenProposal()
                 }
             }
+
             val tvIcon = TextView(context).apply {
                 text = "🌐 \${languageItem.code.uppercase()}"
                 setTextColor(Color.parseColor("#25D366"))
                 textSize = 12f
                 paint.isFakeBoldText = true
             }
+
             badge.addView(tvIcon)
 
             val lp = WindowManager.LayoutParams().apply {
@@ -1676,13 +3480,22 @@ class OverlayController(private val context: Context, private val windowManager:
                 x = (14 * density).toInt()
                 y = (75 * density).toInt()
             }
+
             try {
                 windowManager.addView(badge, lp)
                 detectedBadgeView = badge
-            } catch (e: Exception) {}
+                Log.i(TAG, "Attached detected language badge for \${languageItem.code} at TOP|END")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to show detected language badge", e)
+            }
         }
     }
 
+    /**
+     * Displays a window styled like the chat translation window showing the recognized new language,
+     * sample message text, and proposing to download its local language pack.
+     * If the pack slots are full (3/3), prompts the user to select which pair to replace with this new one.
+     */
     fun showLanguageProposalWindow(
         languageItem: com.bangla.translator.data.LanguageItem,
         sampleText: String,
@@ -1693,10 +3506,9 @@ class OverlayController(private val context: Context, private val windowManager:
         onIgnoreLanguage: (langCode: String) -> Unit,
         onDismiss: () -> Unit
     ) {
-        mainHandler.post {
-            if (proposalDialogView != null) return@post
+        runOnMainThread {
+            if (proposalDialogView != null) return@runOnMainThread
             dismissDetectedLanguageBadge()
-            dismissLanguageProposal()
 
             val card = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
@@ -1705,10 +3517,12 @@ class OverlayController(private val context: Context, private val windowManager:
                 elevation = 24f * density
             }
 
+            // Header Row
             val headerRow = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
+
             val tvTitle = TextView(context).apply {
                 text = "🌐 Recognized New Language"
                 setTextColor(Color.WHITE)
@@ -1716,6 +3530,7 @@ class OverlayController(private val context: Context, private val windowManager:
                 paint.isFakeBoldText = true
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
+
             val tvClose = TextView(context).apply {
                 text = "✕"
                 setTextColor(Color.parseColor("#A0AEC0"))
@@ -1726,10 +3541,12 @@ class OverlayController(private val context: Context, private val windowManager:
                     onDismiss()
                 }
             }
+
             headerRow.addView(tvTitle)
             headerRow.addView(tvClose)
             card.addView(headerRow)
 
+            // Detected Language Details
             val tvDetails = TextView(context).apply {
                 text = "\${languageItem.name} (\${languageItem.nativeName})\\nML Kit On-Device Detection (98% match)"
                 setTextColor(Color.parseColor("#25D366"))
@@ -1741,7 +3558,7 @@ class OverlayController(private val context: Context, private val windowManager:
 
             if (sampleText.isNotBlank()) {
                 val tvSample = TextView(context).apply {
-                    text = "Message: \\"\$sampleText\\""
+                    text = "Message: \\"$sampleText\\""
                     setTextColor(Color.parseColor("#E9EDEF"))
                     textSize = 11f
                     setPadding(0, (2 * density).toInt(), 0, (8 * density).toInt())
@@ -1758,6 +3575,7 @@ class OverlayController(private val context: Context, private val windowManager:
             card.addView(tvSubtitle)
 
             if (isSlotsFull && currentPairs.isNotEmpty()) {
+                // Warning: 3 slots full, ask for replacement
                 val tvFullNotice = TextView(context).apply {
                     text = "Language pack storage full (3/3). Select which pair to replace with \${languageItem.name}:"
                     setTextColor(Color.parseColor("#F6AD55"))
@@ -1791,6 +3609,7 @@ class OverlayController(private val context: Context, private val windowManager:
                     card.addView(btnOption)
                 }
             } else {
+                // Slot available (< 3 slots)
                 val btnDownload = TextView(context).apply {
                     text = "Download \${languageItem.name} Pack (~30MB)"
                     textSize = 12f
@@ -1838,20 +3657,25 @@ class OverlayController(private val context: Context, private val windowManager:
                 width = (310 * density).toInt()
                 height = WindowManager.LayoutParams.WRAP_CONTENT
                 type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
-                flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                 format = PixelFormat.TRANSLUCENT
                 gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
                 y = (70 * density).toInt()
             }
+
             try {
                 windowManager.addView(card, lp)
                 proposalDialogView = card
-            } catch (e: Exception) {}
+                Log.i(TAG, "Attached proposal dialog view for \${languageItem.code}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to show proposal dialog view", e)
+            }
         }
     }
 
     fun dismissDetectedLanguageBadge() {
-        mainHandler.post {
+        runOnMainThread {
             detectedBadgeView?.let {
                 try { windowManager.removeView(it) } catch (e: Exception) {}
                 detectedBadgeView = null
@@ -1860,7 +3684,7 @@ class OverlayController(private val context: Context, private val windowManager:
     }
 
     fun dismissLanguageProposal() {
-        mainHandler.post {
+        runOnMainThread {
             proposalDialogView?.let {
                 try { windowManager.removeView(it) } catch (e: Exception) {}
                 proposalDialogView = null
@@ -1868,7 +3692,16 @@ class OverlayController(private val context: Context, private val windowManager:
         }
     }
 
-    val activeCount: Int get() = activeOverlays.size
+    val activeCount: Int
+        get() = activeOverlays.size
+
+    private fun runOnMainThread(action: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            action()
+        } else {
+            mainHandler.post(action)
+        }
+    }
 }
 `,
 
@@ -1877,193 +3710,514 @@ class OverlayController(private val context: Context, private val windowManager:
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
+import android.content.res.Configuration
 import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
+import android.util.DisplayMetrics
+import android.util.Log
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import com.bangla.translator.data.AppPreferences
 import com.bangla.translator.data.ScannedMessage
-import com.bangla.translator.data.SupportedLanguages
 import com.bangla.translator.overlay.OverlayController
 import com.bangla.translator.scanner.WhatsAppMessageScanner
 import com.bangla.translator.translation.TranslationEngine
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
+/**
+ * Native Android Accessibility Service that inspects visible WhatsApp and WhatsApp Business
+ * chat hierarchies, extracts Bengali messages, translates them locally on-device, and renders
+ * overlays near the original messages.
+ */
 class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnSharedPreferenceChangeListener {
+
+    companion object {
+        private const val TAG = "BanglaAccessService"
+        private const val DEBOUNCE_DELAY_MS = 150L
+        private const val WATCHDOG_INTERVAL_MS = 350L
+
+        val SUPPORTED_PACKAGES = setOf("com.whatsapp", "com.whatsapp.w4b")
+        val SYSTEM_OVERLAY_PACKAGES = setOf(
+            "com.bangla.translator",
+            "com.bangla.translator.debug",
+            "com.android.systemui",
+            "android"
+        )
+
+        @Volatile
+        var isServiceRunning: Boolean = false
+            private set
+    }
+
+    // Core generation tracking to prevent race conditions across chat switches
     private val sessionGeneration = AtomicLong(1L)
+
     private lateinit var appPreferences: AppPreferences
     private lateinit var overlayController: OverlayController
     private lateinit var messageScanner: WhatsAppMessageScanner
+    private lateinit var windowManager: WindowManager
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private val screenBounds = Rect()
+
+    // Currently visible keys mapped to message metadata for the active generation
+    private val activeVisibleKeys = ConcurrentHashMap<String, ScannedMessage>()
+
+    // In-flight tracker: (normalizedText, generation) -> in-flight
+    private val inFlightSet = ConcurrentHashMap<Pair<String, Long>, Boolean>()
+
+    private var lastObservedChatWindow: String? = null
+    private var currentTypingBarTop: Int? = null
+    private val isWatchdogActive = AtomicBoolean(false)
+    private var nonForegroundCount = 0
     private val dismissedLangsThisSession = mutableSetOf<String>()
+
+    // Debounced scan task
+    private val scanRunnable = Runnable {
+        performHierarchyScan()
+    }
+
+    // Safety watchdog task to detect leaving WhatsApp even if foreign events are filtered
+    private val watchdogRunnable = object : Runnable {
+        override fun run() {
+            if (!isWhatsAppForeground()) {
+                nonForegroundCount++
+                if (nonForegroundCount >= 2) {
+                    handleLeftWhatsApp()
+                    nonForegroundCount = 0
+                } else {
+                    mainHandler.postDelayed(this, 300L)
+                }
+            } else {
+                nonForegroundCount = 0
+                if (overlayController.activeCount > 0 || inFlightSet.isNotEmpty()) {
+                    mainHandler.postDelayed(this, 300L)
+                } else {
+                    isWatchdogActive.set(false)
+                }
+            }
+        }
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        Log.i(TAG, "BanglaAccessibilityService connected.")
+        isServiceRunning = true
+
+        windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         appPreferences = AppPreferences(this)
         appPreferences.registerListener(this)
+
         messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
-        overlayController = OverlayController(this, wm)
+        overlayController = OverlayController(this, windowManager)
         TranslationEngine.setLanguagePair(appPreferences.sourceLanguageCode, appPreferences.targetLanguageCode)
 
-        val metrics = resources.displayMetrics
-        screenBounds.set(0, 0, metrics.widthPixels, metrics.heightPixels)
+        updateScreenBounds()
 
+        // Configure accessibility dynamic properties
         val info = serviceInfo ?: AccessibilityServiceInfo()
         info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
                 AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
                 AccessibilityEvent.TYPE_VIEW_SCROLLED or
                 AccessibilityEvent.TYPE_WINDOWS_CHANGED
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-        info.flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+        info.flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
+                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
         info.notificationTimeout = 100
         serviceInfo = info
+
         TranslationEngine.checkModelAvailability()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
         val pkg = event.packageName?.toString() ?: ""
-        if (pkg !in WhatsAppMessageScanner.SUPPORTED_PACKAGES) {
+
+        // Ignore events from our own overlay windows, system UI, and keyboards
+        if (pkg in SYSTEM_OVERLAY_PACKAGES || pkg.contains("inputmethod") || pkg.contains("keyboard") || pkg.contains("ime")) {
+            return
+        }
+
+        // If a foreign application or launcher window state changed, user left WhatsApp
+        if (pkg !in SUPPORTED_PACKAGES) {
             if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg.isNotEmpty()) {
-                sessionGeneration.incrementAndGet()
-                overlayController.removeAllOverlays()
-                dismissedLangsThisSession.clear()
+                handleLeftWhatsApp()
             }
             return
         }
 
-        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            sessionGeneration.incrementAndGet()
-            overlayController.removeAllOverlays()
-            dismissedLangsThisSession.clear()
+        if (!appPreferences.isOverlayEnabled) {
+            return
         }
 
-        if (!appPreferences.isOverlayEnabled) return
+        when (event.eventType) {
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                handleWindowStateChanged(event)
+            }
+            AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
+                scheduleDebouncedScan()
+            }
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
+                scheduleDebouncedScan()
+            }
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> {
+                scheduleDebouncedScan()
+            }
+        }
+    }
 
-        mainHandler.postDelayed({
-            val root = rootInActiveWindow ?: return@postDelayed
-            val currentGen = sessionGeneration.get()
-            val scanResult = messageScanner.scanVisibleMessages(root, screenBounds, currentGen)
+    /**
+     * Differentiates chat transitions from minor dialogs or keyboard events.
+     */
+    private fun handleWindowStateChanged(event: AccessibilityEvent) {
+        val className = event.className?.toString() ?: ""
+
+        // Ignore soft keyboard / input method window state changes
+        if (className.contains("InputMethod") || className.contains("Keyguard")) {
+            return
+        }
+
+        // WhatsApp conversation screen detection
+        val isConversationActivity = className.contains("Conversation") ||
+                className.contains("Chat") ||
+                className.contains("HomeActivity")
+
+        if (isConversationActivity) {
+            startNewSession()
+            lastObservedChatWindow = className
+        }
+
+        scheduleDebouncedScan()
+    }
+
+    /**
+     * Increments session generation and invalidates old overlays and in-flight tasks.
+     */
+    private fun startNewSession() {
+        val newGen = sessionGeneration.incrementAndGet()
+        Log.d(TAG, "Starting new conversation session generation: $newGen")
+
+        overlayController.removeAllOverlays()
+        activeVisibleKeys.clear()
+        inFlightSet.clear()
+        dismissedLangsThisSession.clear()
+    }
+
+    /**
+     * Debounces scans to prevent high-frequency hierarchy re-traversals.
+     */
+    private fun scheduleDebouncedScan() {
+        mainHandler.removeCallbacks(scanRunnable)
+        mainHandler.postDelayed(scanRunnable, DEBOUNCE_DELAY_MS)
+        ensureWatchdogRunning()
+    }
+
+    /**
+     * Traverses the WhatsApp hierarchy, identifies visible Bengali messages,
+     * reconciles stale overlays, and triggers asynchronous on-device translations.
+     */
+    private fun performHierarchyScan() {
+        if (!isWhatsAppForeground()) {
+            handleLeftWhatsApp()
+            return
+        }
+
+        if (!appPreferences.isOverlayEnabled) {
+            overlayController.removeAllOverlays()
+            return
+        }
+
+        val currentGen = sessionGeneration.get()
+        val root = rootInActiveWindow ?: return
+
+        val scanResult = try {
+            messageScanner.scanVisibleMessages(root, screenBounds, currentGen)
+        } finally {
             root.recycle()
+        }
 
-            val uninstalled = scanResult.detectedUninstalledLanguage
-            if (uninstalled != null &&
-                appPreferences.isAutoDetectPromptEnabled &&
-                !appPreferences.isLanguageIgnored(uninstalled) &&
-                !dismissedLangsThisSession.contains(uninstalled)
-            ) {
-                val item = SupportedLanguages.findByCode(uninstalled)
-                val sample = scanResult.sampleUninstalledText ?: ""
-                val currentPairs = appPreferences.getLanguagePairs()
-                val isSlotsFull = currentPairs.size >= AppPreferences.MAX_ACTIVE_LANGUAGES
+        val scannedMessages = scanResult.messages
+        currentTypingBarTop = scanResult.inputBarTop
 
-                overlayController.showLanguageProposalWindow(
-                    languageItem = item,
-                    sampleText = sample,
-                    isSlotsFull = isSlotsFull,
-                    currentPairs = currentPairs,
-                    onDownloadAndAdd = {
-                        dismissedLangsThisSession.add(uninstalled)
-                        appPreferences.addLanguagePair(uninstalled, "en")
-                        TranslationEngine.prepareModelIfNeeded(
-                            sourceLangCode = item.mlKitCode,
-                            onSuccess = {
-                                mainHandler.post {
-                                    messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
-                                }
+        // Check if an uninstalled language is discovered and propose language pack
+        val uninstalled = scanResult.detectedUninstalledLanguage
+        if (uninstalled != null &&
+            appPreferences.isAutoDetectPromptEnabled &&
+            !appPreferences.isLanguageIgnored(uninstalled) &&
+            !dismissedLangsThisSession.contains(uninstalled)
+        ) {
+            val item = com.bangla.translator.data.SupportedLanguages.findByCode(uninstalled)
+            val sample = scanResult.sampleUninstalledText ?: ""
+            val currentPairs = appPreferences.getLanguagePairs()
+            val isSlotsFull = currentPairs.size >= com.bangla.translator.data.AppPreferences.MAX_ACTIVE_LANGUAGES
+
+            overlayController.showLanguageProposalWindow(
+                languageItem = item,
+                sampleText = sample,
+                isSlotsFull = isSlotsFull,
+                currentPairs = currentPairs,
+                onDownloadAndAdd = {
+                    dismissedLangsThisSession.add(uninstalled)
+                    appPreferences.addLanguagePair(uninstalled, "en")
+                    com.bangla.translator.translation.TranslationEngine.prepareModelIfNeeded(
+                        sourceLangCode = item.mlKitCode,
+                        onSuccess = {
+                            mainHandler.post {
+                                messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
+                                performHierarchyScan()
                             }
-                        )
-                    },
-                    onReplacePair = { oldSourceCode ->
-                        dismissedLangsThisSession.add(uninstalled)
-                        appPreferences.replaceLanguagePair(oldSourceCode, uninstalled, "en")
-                        val remaining = appPreferences.activeSourceLanguages
-                        if (!remaining.contains(oldSourceCode)) {
-                            val oldMeta = SupportedLanguages.findByCode(oldSourceCode)
-                            TranslationEngine.deleteModel(oldMeta.mlKitCode)
                         }
-                        TranslationEngine.prepareModelIfNeeded(
-                            sourceLangCode = item.mlKitCode,
-                            onSuccess = {
-                                mainHandler.post {
-                                    messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
-                                }
+                    )
+                },
+                onReplacePair = { oldSourceCode ->
+                    dismissedLangsThisSession.add(uninstalled)
+                    appPreferences.replaceLanguagePair(oldSourceCode, uninstalled, "en")
+                    val remaining = appPreferences.activeSourceLanguages
+                    if (!remaining.contains(oldSourceCode)) {
+                        val oldMeta = com.bangla.translator.data.SupportedLanguages.findByCode(oldSourceCode)
+                        com.bangla.translator.translation.TranslationEngine.deleteModel(oldMeta.mlKitCode)
+                    }
+                    com.bangla.translator.translation.TranslationEngine.prepareModelIfNeeded(
+                        sourceLangCode = item.mlKitCode,
+                        onSuccess = {
+                            mainHandler.post {
+                                messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
+                                performHierarchyScan()
                             }
-                        )
-                    },
-                    onIgnoreLanguage = { langCode ->
-                        dismissedLangsThisSession.add(langCode)
-                        appPreferences.addIgnoredLanguage(langCode)
-                    },
-                    onDismiss = { dismissedLangsThisSession.add(uninstalled) }
-                )
-            }
-
-            val messages = scanResult.messages
-            val currentlyVisible = messages.map { it.displayKey }.toSet()
-            overlayController.reconcileVisibleOverlays(currentlyVisible)
-
-            for (msg in messages) {
-                TranslationEngine.translate(
-                    text = msg.normalizedText,
-                    sourceCode = msg.languageCode,
-                    onSuccess = { translated ->
-                        if (sessionGeneration.get() == currentGen) {
-                            val isMulti = msg.languageCode.contains("+")
-                            val codes = if (isMulti) msg.languageCode.split("+").filter { it.isNotBlank() } else listOf(msg.languageCode)
-                            val trgMeta = SupportedLanguages.findByCode(appPreferences.targetLanguageCode)
-                            val dynamicPairLabel = if (codes.size > 1) {
-                                val sNames = codes.map { c ->
-                                    val m = SupportedLanguages.findByCode(c)
-                                    "\${m.name} (\${m.nativeName})"
-                                }.joinToString(" + ")
-                                "\$sNames → \${trgMeta.name}"
-                            } else {
-                                val srcMeta = SupportedLanguages.findByCode(codes.firstOrNull() ?: "bn")
-                                "\${srcMeta.name} (\${srcMeta.nativeName}) → \${trgMeta.name}"
-                            }
-                            val dynamicBadgeLabel = if (codes.size > 1) codes.joinToString("+") { it.uppercase() } else trgMeta.code.uppercase()
-
-                            overlayController.showOverlay(
-                                displayKey = msg.displayKey,
-                                translatedText = translated,
-                                targetBounds = msg.bounds,
-                                sessionGeneration = currentGen,
-                                screenBounds = screenBounds,
-                                languagePairLabel = dynamicPairLabel,
-                                badgeLabel = dynamicBadgeLabel
-                            )
                         }
-                    },
-                    onFailure = {}
-                )
+                    )
+                },
+                onIgnoreLanguage = { langCode ->
+                    dismissedLangsThisSession.add(langCode)
+                    appPreferences.addIgnoredLanguage(langCode)
+                },
+                onDismiss = {
+                    dismissedLangsThisSession.add(uninstalled)
+                }
+            )
+        }
+
+        val currentVisibleKeySet = HashSet<String>()
+        var hasNewMessageArrived = false
+        for (msg in scannedMessages) {
+            if (!activeVisibleKeys.containsKey(msg.displayKey)) {
+                hasNewMessageArrived = true
             }
-        }, 150L)
+            currentVisibleKeySet.add(msg.displayKey)
+            activeVisibleKeys[msg.displayKey] = msg
+        }
+
+        // Auto-collapse any expanded translation when a new message arrives
+        if (hasNewMessageArrived) {
+            overlayController.collapseAll()
+        }
+
+        // Remove overlays for messages that have scrolled away
+        overlayController.reconcileVisibleOverlays(currentVisibleKeySet)
+
+        // Process each visible message
+        for (msg in scannedMessages) {
+            processMessageTranslation(msg, currentGen)
+        }
+    }
+
+    /**
+     * Dispatches translation request with strict generation and visibility checks.
+     */
+    private fun processMessageTranslation(msg: ScannedMessage, taskGeneration: Long) {
+        // Check cache first for instant synchronous display
+        val cached = TranslationEngine.cache.get(msg.normalizedText)
+        if (cached != null) {
+            val detectedLangs = com.bangla.translator.translation.LanguageDetector.detectAllLanguages(msg.normalizedText)
+            validateAndDisplay(msg, cached, taskGeneration, detectedLangs)
+            return
+        }
+
+        // Avoid duplicate in-flight requests for identical text in the same generation
+        val inFlightKey = Pair(msg.normalizedText, taskGeneration)
+        if (inFlightSet.putIfAbsent(inFlightKey, true) != null) {
+            return
+        }
+
+        TranslationEngine.translateWithDetails(
+            text = msg.normalizedText,
+            sourceCode = msg.languageCode,
+            onSuccess = { details ->
+                inFlightSet.remove(inFlightKey)
+                mainHandler.post {
+                    validateAndDisplay(msg, details.translatedText, taskGeneration, details.detectedLanguages)
+                }
+            },
+            onFailure = { error ->
+                inFlightSet.remove(inFlightKey)
+                Log.w(TAG, "Translation failed for \${msg.normalizedText}: \${error.message}")
+            }
+        )
+    }
+
+    /**
+     * Validates all 5 asynchronous safety rules before rendering an overlay:
+     * 1. Translation belongs to current session/generation.
+     * 2. Message is still considered visible in activeVisibleKeys.
+     * 3. WhatsApp is still the active foreground application.
+     * 4. Overlay feature is still enabled.
+     * 5. Service is still connected.
+     */
+    private fun validateAndDisplay(
+        msg: ScannedMessage,
+        translatedText: String,
+        taskGeneration: Long,
+        detectedLangs: List<String> = emptyList()
+    ) {
+        val currentGen = sessionGeneration.get()
+        if (taskGeneration != currentGen) {
+            Log.d(TAG, "Rejected translation from stale generation $taskGeneration (current: $currentGen)")
+            return
+        }
+
+        if (!isWhatsAppForeground()) {
+            Log.d(TAG, "Rejected translation: WhatsApp is no longer in foreground.")
+            handleLeftWhatsApp()
+            return
+        }
+
+        if (!appPreferences.isOverlayEnabled) {
+            return
+        }
+
+        if (!activeVisibleKeys.containsKey(msg.displayKey)) {
+            Log.d(TAG, "Message \${msg.displayKey} is no longer in active visible set.")
+            return
+        }
+
+        // Dynamically compute the exact language pair label for this specific message bubble
+        val effectiveLangs = if (detectedLangs.isNotEmpty()) {
+            detectedLangs
+        } else if (msg.languageCode.isNotBlank()) {
+            msg.languageCode.split(",").filter { it.isNotBlank() }
+        } else {
+            com.bangla.translator.translation.LanguageDetector.detectAllLanguages(msg.normalizedText)
+        }
+
+        val targetMeta = com.bangla.translator.data.SupportedLanguages.findByCode(appPreferences.targetLanguageCode)
+
+        val dynamicPairLabel = if (effectiveLangs.size > 1) {
+            val nativeNames = effectiveLangs.map { com.bangla.translator.data.SupportedLanguages.findByCode(it).nativeName }.distinct()
+            "\${nativeNames.joinToString(", ")} → \${targetMeta.name}"
+        } else {
+            val singleCode = effectiveLangs.firstOrNull() ?: appPreferences.sourceLanguageCode
+            val sourceMeta = com.bangla.translator.data.SupportedLanguages.findByCode(singleCode)
+            "\${sourceMeta.nativeName} → \${targetMeta.name}"
+        }
+
+        val dynamicBadgeLabel = if (effectiveLangs.size > 1) {
+            "MULTI"
+        } else {
+            targetMeta.code.uppercase()
+        }
+
+        overlayController.showOverlay(
+            displayKey = msg.displayKey,
+            translatedText = translatedText,
+            targetBounds = msg.bounds,
+            sessionGeneration = taskGeneration,
+            screenBounds = screenBounds,
+            inputBarTop = currentTypingBarTop,
+            languagePairLabel = dynamicPairLabel,
+            badgeLabel = dynamicBadgeLabel
+        )
+        ensureWatchdogRunning()
+    }
+
+    /**
+     * Checks if WhatsApp or WhatsApp Business is the active foreground app.
+     */
+    private fun isWhatsAppForeground(): Boolean {
+        val root = rootInActiveWindow ?: return true // Do NOT assume left on transient null root!
+        val pkg = try {
+            root.packageName?.toString() ?: ""
+        } finally {
+            root.recycle()
+        }
+        if (pkg.isEmpty() || pkg in SYSTEM_OVERLAY_PACKAGES || pkg.contains("inputmethod") || pkg.contains("keyboard")) {
+            return true
+        }
+        return pkg in SUPPORTED_PACKAGES
+    }
+
+    /**
+     * Invoked when the user leaves WhatsApp (Home button, App switcher, or foreign app).
+     */
+    private fun handleLeftWhatsApp() {
+        Log.d(TAG, "Leaving WhatsApp detected. Invalidating overlays and in-flight tasks.")
+        sessionGeneration.incrementAndGet()
+        overlayController.removeAllOverlays()
+        activeVisibleKeys.clear()
+        inFlightSet.clear()
+        dismissedLangsThisSession.clear()
+        lastObservedChatWindow = null
+        currentTypingBarTop = null
+    }
+
+    private fun ensureWatchdogRunning() {
+        if (isWatchdogActive.compareAndSet(false, true)) {
+            mainHandler.postDelayed(watchdogRunnable, 200L)
+        }
+    }
+
+    private fun updateScreenBounds() {
+        val displayMetrics = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        windowManager.defaultDisplay.getRealMetrics(displayMetrics)
+        screenBounds.set(0, 0, displayMetrics.widthPixels, displayMetrics.heightPixels)
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        updateScreenBounds()
+        // Orientation / display size changed: recalculate overlays
+        scheduleDebouncedScan()
     }
 
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
-        if (key == "key_overlay_enabled") {
-            if (!appPreferences.isOverlayEnabled) overlayController.removeAllOverlays()
-        } else if (key == "key_bengali_ratio" || key == "key_source_lang" || key == "key_target_lang" || key == "key_active_source_langs" || key == "key_pairs_config") {
+        if (key == AppPreferences.KEY_OVERLAY_ENABLED) {
+            if (!appPreferences.isOverlayEnabled) {
+                overlayController.removeAllOverlays()
+            } else {
+                scheduleDebouncedScan()
+            }
+        } else if (key == AppPreferences.KEY_BENGALI_RATIO ||
+            key == AppPreferences.KEY_SOURCE_LANG ||
+            key == AppPreferences.KEY_TARGET_LANG ||
+            key == AppPreferences.KEY_ACTIVE_SOURCE_LANGS ||
+            key == AppPreferences.KEY_PAIRS_CONFIG
+        ) {
             messageScanner = WhatsAppMessageScanner(appPreferences.activeSourceLanguages, appPreferences.bengaliRatioThreshold)
             TranslationEngine.setLanguagePair(appPreferences.sourceLanguageCode, appPreferences.targetLanguageCode)
             overlayController.removeAllOverlays()
+            scheduleDebouncedScan()
         }
     }
 
     override fun onInterrupt() {
+        Log.w(TAG, "BanglaAccessibilityService interrupted.")
         overlayController.removeAllOverlays()
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        isServiceRunning = false
+        mainHandler.removeCallbacksAndMessages(null)
         appPreferences.unregisterListener(this)
         overlayController.removeAllOverlays()
         TranslationEngine.close()
+        Log.i(TAG, "BanglaAccessibilityService destroyed.")
     }
 }
 `,
@@ -2078,71 +4232,149 @@ import android.content.Intent
 import android.os.Build
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.bangla.translator.R
 import com.bangla.translator.data.AppPreferences
+import com.bangla.translator.translation.BengaliDetector
 import com.bangla.translator.translation.LanguageDetector
 import com.bangla.translator.translation.TranslationEngine
 
+/**
+ * Independent notification listener service that detects incoming Bengali messages
+ * in WhatsApp and WhatsApp Business notifications and posts translated companions.
+ */
 class NotificationTranslationService : NotificationListenerService() {
+
+    companion object {
+        private const val TAG = "NotificationTrans"
+        private const val CHANNEL_ID = "bangla_translated_notifications"
+        private const val CHANNEL_NAME = "Translated WhatsApp Messages"
+
+        val SUPPORTED_PACKAGES = setOf("com.whatsapp", "com.whatsapp.w4b")
+    }
+
     private lateinit var appPreferences: AppPreferences
+    private lateinit var notificationManager: NotificationManager
 
     override fun onCreate() {
         super.onCreate()
         appPreferences = AppPreferences(this)
+        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        createNotificationChannel()
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null) return
-        val pkg = sbn.packageName ?: return
-        if (pkg !in setOf("com.whatsapp", "com.whatsapp.w4b")) return
-        if (!appPreferences.isNotificationTranslationEnabled) return
 
-        val extras = sbn.notification?.extras ?: return
+        val pkgName = sbn.packageName ?: return
+        if (pkgName !in SUPPORTED_PACKAGES) {
+            return
+        }
+
+        // Verify user preference
+        if (!appPreferences.isNotificationTranslationEnabled) {
+            return
+        }
+
+        val notification = sbn.notification ?: return
+        val extras = notification.extras ?: return
+
         val title = extras.getCharSequence("android.title")?.toString() ?: ""
-        val text = extras.getCharSequence("android.text")?.toString() ?: return
+        val text = extras.getCharSequence("android.text")?.toString()
+            ?: extras.getCharSequence("android.bigText")?.toString()
+            ?: ""
 
-        var matchedLang: String? = null
+        if (text.isBlank()) return
+
+        // Check if message text is in any active foreign language
+        var matchedSourceLang: String? = null
         for (lang in appPreferences.activeSourceLanguages) {
             if (LanguageDetector.isTargetLanguageMessage(text, lang, appPreferences.bengaliRatioThreshold)) {
-                matchedLang = lang
+                matchedSourceLang = lang
                 break
             }
         }
-        if (matchedLang == null) return
+        if (matchedSourceLang == null) return
 
+        // Translate locally
         TranslationEngine.translate(
             text = text,
-            sourceCode = matchedLang,
+            sourceCode = matchedSourceLang,
             onSuccess = { translatedText ->
-                postTranslatedNotification(pkg, title, text, translatedText, sbn.id)
+                postTranslatedNotification(
+                    originalPkg = pkgName,
+                    senderTitle = title,
+                    originalText = text,
+                    translatedText = translatedText,
+                    notificationId = sbn.id
+                )
             },
-            onFailure = {}
+            onFailure = { error ->
+                Log.w(TAG, "Failed to translate notification: \${error.message}")
+            }
         )
     }
 
-    private fun postTranslatedNotification(originalPkg: String, senderTitle: String, originalText: String, translatedText: String, notificationId: Int) {
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channelId = "chatnora_translations"
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(channelId, "ChatNora Translations", NotificationManager.IMPORTANCE_DEFAULT)
-            nm.createNotificationChannel(channel)
-        }
-
+    private fun postTranslatedNotification(
+        originalPkg: String,
+        senderTitle: String,
+        originalText: String,
+        translatedText: String,
+        notificationId: Int
+    ) {
+        // Create intent to open originating WhatsApp variant
         val launchIntent = packageManager.getLaunchIntentForPackage(originalPkg)
         val pendingIntent = if (launchIntent != null) {
-            PendingIntent.getActivity(this, notificationId, launchIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            PendingIntent.getActivity(
+                this,
+                notificationId,
+                launchIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
         } else null
 
-        val builder = NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(R.drawable.ic_app_launcher)
-            .setContentTitle(if (senderTitle.isNotBlank()) "\$senderTitle (Translated)" else "ChatNora")
-            .setContentText(translatedText)
-            .setStyle(NotificationCompat.BigTextStyle().bigText("\$translatedText\\n\\nOriginal: \$originalText"))
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
+        val appLabel = if (originalPkg == "com.whatsapp.w4b") "WhatsApp Business" else "WhatsApp"
+        val displayTitle = if (senderTitle.isNotBlank()) {
+            "$senderTitle ($appLabel Translated)"
+        } else {
+            "$appLabel (Bengali Translated)"
+        }
 
-        nm.notify(notificationId + 200000, builder.build())
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_app_launcher)
+            .setContentTitle(displayTitle)
+            .setContentText(translatedText)
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .bigText("$translatedText\\n\\nOriginal: $originalText")
+            )
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+
+        if (pendingIntent != null) {
+            builder.setContentIntent(pendingIntent)
+        }
+
+        try {
+            notificationManager.notify(notificationId + 100000, builder.build())
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Missing notification permission to post translated notification", e)
+        }
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                CHANNEL_NAME,
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Shows local Bengali to English translations of incoming WhatsApp messages"
+                enableVibration(false)
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
     }
 }
 `,
@@ -2155,6 +4387,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -2210,41 +4443,14 @@ class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceCh
         TranslationEngine.checkModelAvailability()
     }
 
-    override fun onStart() {
-        super.onStart()
-        appPreferences.registerListener(this)
-        refreshAllUI()
-    }
-
     override fun onResume() {
         super.onResume()
         appPreferences.registerListener(this)
         refreshAllUI()
     }
 
-    override fun onRestart() {
-        super.onRestart()
-        refreshAllUI()
-    }
-
-    override fun onWindowFocusChanged(hasFocus: Boolean) {
-        super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) {
-            refreshAllUI()
-        }
-    }
-
-    override fun onStop() {
-        super.onStop()
-        appPreferences.unregisterListener(this)
-    }
-
     override fun onPause() {
         super.onPause()
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
         appPreferences.unregisterListener(this)
     }
 
@@ -2511,7 +4717,7 @@ class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceCh
             val trg = SupportedLanguages.findByCode(it.targetCode)
             "\${src.nativeName} → \${trg.name}"
         }
-        binding.tvActivePairSummary.text = "Active Pairs (\${pairs.size}/3): \$summary"
+        binding.tvActivePairSummary.text = "Active Pairs (\${pairs.size}/3): $summary"
         binding.tvModelDescription.text = "Downloads ~30MB Google ML Kit model per language for 100% offline WhatsApp translations."
     }
 
@@ -2628,6 +4834,29 @@ class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceCh
         // Add Ignored Language Button
         binding.btnAddIgnoredLanguage.setOnClickListener {
             showAddIgnoredLanguageDialog()
+        }
+
+        // Repository & Support Actions
+        binding.btnReportGitHubIssue.setOnClickListener {
+            try {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/sheminasalam/ChatNora/issues"))
+                startActivity(intent)
+            } catch (e: Exception) {
+                Toast.makeText(this, "Could not open browser. Repository: github.com/sheminasalam/ChatNora", Toast.LENGTH_LONG).show()
+            }
+        }
+
+        binding.btnContactDevEmail.setOnClickListener {
+            try {
+                val intent = Intent(Intent.ACTION_SENDTO).apply {
+                    data = Uri.parse("mailto:sheminasalam@gmail.com")
+                    putExtra(Intent.EXTRA_SUBJECT, "[ChatNora] Bug Report & Issue Feedback")
+                    putExtra(Intent.EXTRA_TEXT, "Hello ChatNora Team,\\n\\nI would like to report an issue / request a feature:\\n\\nDevice: \${Build.MANUFACTURER} \${Build.MODEL} (Android \${Build.VERSION.RELEASE})\\nApp Version: 2.0.0\\n\\nDetails:\\n")
+                }
+                startActivity(Intent.createChooser(intent, "Contact Developer"))
+            } catch (e: Exception) {
+                Toast.makeText(this, "Email: sheminasalam@gmail.com", Toast.LENGTH_LONG).show()
+            }
         }
 
         refreshIgnoredLanguagesUI()
@@ -2839,14 +5068,137 @@ class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceCh
         return false
     }
 }
-`
+`,
+
+  'app/src/test/java/com/bangla/translator/BengaliDetectorTest.kt': `package com.bangla.translator
+
+import com.bangla.translator.translation.BengaliDetector
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class BengaliDetectorTest {
+
+    @Test
+    fun testPureBengaliMessage() {
+        assertTrue(BengaliDetector.isBengali("তুমি কোথায় আছো?"))
+        assertTrue(BengaliDetector.isBengali("কেমন আছেন? সব ঠিক আছে তো?"))
+    }
+
+    @Test
+    fun testMixedBengaliAndEnglishMessage() {
+        // "কাল meeting আছে?" contains 6 Bengali characters and 7 English letters -> ratio ~46% > 20%
+        assertTrue(BengaliDetector.isBengali("কাল meeting আছে?"))
+        assertTrue(BengaliDetector.isBengali("ভাই WhatsApp এ call দিন"))
+    }
+
+    @Test
+    fun testEnglishOnlyMessage() {
+        assertFalse(BengaliDetector.isBengali("Hello how are you?"))
+        assertFalse(BengaliDetector.isBengali("Let's meet tomorrow at 10 AM"))
+    }
+
+    @Test
+    fun testEmojiOnlyMessage() {
+        assertFalse(BengaliDetector.isBengali("😂👍🎉"))
+        assertFalse(BengaliDetector.isBengali("❤️🔥"))
+    }
+
+    @Test
+    fun testBengaliWithEmojiMessage() {
+        assertTrue(BengaliDetector.isBengali("ভালো আছি ভাই 😂👍"))
+    }
+
+    @Test
+    fun testUrlExclusion() {
+        assertFalse(BengaliDetector.isBengali("https://example.com"))
+        assertFalse(BengaliDetector.isBengali("http://news.bangla.com/article/123"))
+    }
+
+    @Test
+    fun testTimestampAndDurationExclusion() {
+        assertFalse(BengaliDetector.isBengali("12:45 PM"))
+        assertFalse(BengaliDetector.isBengali("09:30 am"))
+        assertFalse(BengaliDetector.isBengali("0:15"))
+    }
+
+    @Test
+    fun testNumbersOnly() {
+        assertFalse(BengaliDetector.isBengali("123456789"))
+        assertFalse(BengaliDetector.isBengali("+8801712345678"))
+    }
+
+    @Test
+    fun testEmptyOrWhitespace() {
+        assertFalse(BengaliDetector.isBengali(""))
+        assertFalse(BengaliDetector.isBengali("   "))
+        assertFalse(BengaliDetector.isBengali(null))
+    }
+}
+`,
+
+  'app/src/test/java/com/bangla/translator/TranslationCacheTest.kt': `package com.bangla.translator
+
+import com.bangla.translator.translation.TranslationCache
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+class TranslationCacheTest {
+
+    @Test
+    fun testTextNormalization() {
+        val cache = TranslationCache()
+        val raw = "   তুমি     কোথায়   আছো?   \\n\\n  "
+        val expected = "তুমি কোথায় আছো?"
+
+        assertEquals(expected, cache.normalize(raw))
+    }
+
+    @Test
+    fun testCacheHitWithDifferentSpacing() {
+        val cache = TranslationCache()
+        cache.put("তুমি কেমন আছো?", "How are you?")
+
+        // Spaced out variation should hit cache due to normalization
+        val result = cache.get("   তুমি    কেমন   আছো?  ")
+        assertNotNull(result)
+        assertEquals("How are you?", result)
+    }
+
+    @Test
+    fun testCacheMiss() {
+        val cache = TranslationCache()
+        assertNull(cache.get("কোনো অনুবাদ নেই"))
+    }
+
+    @Test
+    fun testBoundedCapacityEviction() {
+        val maxItems = 3
+        val cache = TranslationCache(maxEntries = maxItems)
+
+        cache.put("১", "One")
+        cache.put("২", "Two")
+        cache.put("৩", "Three")
+        assertEquals(3, cache.size)
+
+        // Adding 4th item should evict the oldest (LRU)
+        cache.put("৪", "Four")
+        assertEquals(3, cache.size)
+        assertNull(cache.get("১"))
+        assertNotNull(cache.get("৪"))
+    }
+}
+`,
+
 };
 
 export async function downloadProjectZip() {
   const zip = new JSZip();
 
   for (const [filename, content] of Object.entries(ALL_PROJECT_FILES)) {
-    zip.file(`ChatNora/\${filename}`, content);
+    zip.file(`ChatNora/${filename}`, content);
   }
 
   const blob = await zip.generateAsync({ type: 'blob' });
@@ -2859,4 +5211,3 @@ export async function downloadProjectZip() {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
-

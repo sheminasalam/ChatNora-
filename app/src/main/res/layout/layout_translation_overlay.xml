@@ -40,7 +40,7 @@
             android:includeFontPadding="false" />
     </LinearLayout>
 
-    <!-- Expanded State: Chat Bubble Shape & Size (Matching WhatsApp Bubble) with Vertical Scrolling -->
+    <!-- Expanded State: Chat Bubble Shape & Size (Matching WhatsApp Bubble) with Vertical Scroll Support -->
     <LinearLayout
         android:id="@+id/llExpandedCard"
         android:layout_width="match_parent"
@@ -51,13 +51,19 @@
         android:paddingStart="12dp"
         android:paddingTop="6dp"
         android:paddingEnd="12dp"
-        android:paddingBottom="7dp">
+        android:paddingBottom="7dp"
+        android:clickable="true"
+        android:focusable="true">
 
+        <!-- Top Header Bar with Language Label, Scroll Indicator and Close Button -->
         <LinearLayout
+            android:id="@+id/llExpandedHeader"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:clickable="true"
+            android:focusable="true">
 
             <TextView
                 android:id="@+id/tvLanguageLabel"
@@ -71,32 +77,36 @@
                 android:letterSpacing="0.02" />
 
             <TextView
-                android:id="@+id/tvCloseExpanded"
+                android:id="@+id/tvScrollHint"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="✕"
-                android:textSize="11sp"
+                android:text="↕ Scroll"
+                android:textSize="9sp"
                 android:textColor="@color/overlay_incoming_label"
-                android:paddingStart="6dp"
-                android:paddingEnd="2dp"
-                android:paddingTop="1dp"
-                android:paddingBottom="1dp"
-                android:clickable="true"
-                android:focusable="true" />
+                android:visibility="gone"
+                android:layout_marginEnd="6dp"
+                android:includeFontPadding="false" />
+
+            <ImageView
+                android:id="@+id/ivCloseOverlay"
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:src="@android:drawable/ic_menu_close_clear_cancel"
+                android:contentDescription="Close"
+                app:tint="@color/overlay_incoming_label" />
         </LinearLayout>
 
+        <!-- Vertical Scroll Container for long messages without cropping -->
         <ScrollView
-            android:id="@+id/svTranslatedText"
+            android:id="@+id/svTranslatedContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="3dp"
+            android:layout_marginTop="2.5dp"
             android:scrollbars="vertical"
             android:fadeScrollbars="false"
-            android:scrollbarSize="3.5dp"
-            android:scrollbarThumbVertical="@android:color/darker_gray"
+            android:fillViewport="true"
             android:overScrollMode="ifContentScrolls"
-            android:isScrollContainer="true"
-            android:fillViewport="true">
+            android:nestedScrollingEnabled="true">
 
             <TextView
                 android:id="@+id/tvTranslatedText"
@@ -105,8 +115,7 @@
                 android:textColor="@color/overlay_text"
                 android:textSize="13.5sp"
                 android:textStyle="normal"
-                android:lineSpacingExtra="2dp"
-                android:maxLines="200"
+                android:lineSpacingExtra="1.5dp"
                 android:includeFontPadding="false"
                 android:textIsSelectable="false" />
         </ScrollView>

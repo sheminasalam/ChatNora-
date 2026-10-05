@@ -112,31 +112,29 @@ class WhatsAppMessageScanner(
                                 if (!isInsideQuotedMessage(node)) {
                                     val normalized = candidateText.trim().replace(Regex("\\s+"), " ")
 
-                                    // 1. Check if candidate belongs to any of the active languages (including mixed multilingual messages)
-                                    val detectedLangs = LanguageDetector.getDetectedLanguages(candidateText)
-                                    val matchedActiveLangs = detectedLangs.filter { activeSourceLanguages.contains(it) }
+                                    // 1. Check if candidate belongs to any of the active languages
+                                    val detectedLangs = LanguageDetector.detectAllLanguages(candidateText)
+                                    val matchedActiveLangs = detectedLangs.filter { it in activeSourceLanguages }
 
-                                    val orderedLangs = activeSourceLanguages.sortedWith { a, b ->
-                                        when {
-                                            a == "fr" && b == "es" -> -1
-                                            a == "es" && b == "fr" -> 1
-                                            else -> 0
-                                        }
-                                    }
-
-                                    val matchedLang = when {
-                                        matchedActiveLangs.size > 1 -> matchedActiveLangs.joinToString("+")
-                                        matchedActiveLangs.size == 1 -> matchedActiveLangs[0]
-                                        else -> {
-                                            var singleMatch: String? = null
-                                            for (lang in orderedLangs) {
-                                                if (LanguageDetector.isTargetLanguageMessage(candidateText, lang, ratioThreshold)) {
-                                                    singleMatch = lang
-                                                    break
-                                                }
+                                    var matchedLang: String? = if (matchedActiveLangs.isNotEmpty()) {
+                                        matchedActiveLangs.joinToString(",")
+                                    } else {
+                                        // Fallback legacy heuristic check
+                                        var found: String? = null
+                                        val orderedLangs = activeSourceLanguages.sortedWith { a, b ->
+                                            when {
+                                                a == "fr" && b == "es" -> -1
+                                                a == "es" && b == "fr" -> 1
+                                                else -> 0
                                             }
-                                            singleMatch
                                         }
+                                        for (lang in orderedLangs) {
+                                            if (LanguageDetector.isTargetLanguageMessage(candidateText, lang, ratioThreshold)) {
+                                                found = lang
+                                                break
+                                            }
+                                        }
+                                        found
                                     }
 
                                     if (matchedLang != null) {

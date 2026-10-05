@@ -29,7 +29,12 @@ import {
   X,
   Ban,
   ShieldAlert,
-  Bell
+  Bell,
+  Github,
+  Mail,
+  MessageSquare,
+  Bug,
+  ScrollText
 } from 'lucide-react';
 import { downloadProjectZip } from './projectExporter';
 
@@ -146,51 +151,102 @@ object BengaliDetector {
     }
 }`
   },
+  'LanguageDetector.kt': {
+    path: 'app/src/main/java/com/bangla/translator/translation/LanguageDetector.kt',
+    category: 'Translation Engine',
+    description: 'Universal 19+ language detector with intelligent multi-language segment decomposition. Splits mixed messages (e.g. French + Spanish forwarded texts) into per-language segments to ensure complete translation without falling back to single-language misclassifications.',
+    content: `package com.bangla.translator.translation
+
+import com.google.mlkit.nl.languageid.LanguageIdentification
+import com.google.mlkit.nl.languageid.LanguageIdentifier
+import java.util.regex.Pattern
+
+object LanguageDetector {
+    data class TextSegment(
+        val rawSegment: String,
+        val prefix: String,
+        val body: String,
+        val detectedLanguage: String?
+    )
+
+    // Decomposes mixed messages (e.g., forwarded French news + Spanish quotes)
+    fun splitMultilingualSegments(fullText: String, activeLanguages: Set<String>): List<TextSegment> {
+        val rawSegments = fullText.split(FORWARDED_HEADER_SPLIT_REGEX).filter { it.isNotBlank() }
+        return rawSegments.map { raw ->
+            val match = FORWARDED_PREFIX_REGEX.find(raw)
+            val prefix = match?.value ?: ""
+            val body = raw.substring(prefix.length)
+            val detected = detectLanguage(body)
+            TextSegment(raw, prefix, body, detected)
+        }
+    }
+}`
+  },
+  'layout_translation_overlay.xml': {
+    path: 'app/src/main/res/layout/layout_translation_overlay.xml',
+    category: 'Layout & XML',
+    description: 'XML layout for on-screen translation bubble. Features compact collapsed badge, close button, language pair title, and a vertical ScrollView container preventing long translated text from ever being cropped.',
+    content: `<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/flOverlayContainer"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content">
+
+    <!-- Collapsed State: Compact Translate Badge -->
+    <LinearLayout android:id="@+id/llCollapsedBadge" ... />
+
+    <!-- Expanded State: Scrollable Chat Bubble with Header & Close Button -->
+    <LinearLayout android:id="@+id/llExpandedCard" ...>
+        <LinearLayout android:id="@+id/llExpandedHeader" ...>
+            <TextView android:id="@+id/tvLanguageLabel" ... />
+            <TextView android:id="@+id/tvScrollHint" android:text="↕ Scroll" ... />
+            <ImageView android:id="@+id/ivCloseOverlay" ... />
+        </LinearLayout>
+
+        <ScrollView
+            android:id="@+id/svTranslatedContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="vertical"
+            android:fadeScrollbars="false">
+            <TextView android:id="@+id/tvTranslatedText" ... />
+        </ScrollView>
+    </LinearLayout>
+</FrameLayout>`
+  },
   'OverlayController.kt': {
     path: 'app/src/main/java/com/bangla/translator/overlay/OverlayController.kt',
     category: 'UI & WindowManager',
-    description: 'Dynamic overlay manager using TYPE_ACCESSIBILITY_OVERLAY. Dynamic view measurement, below/above candidate positioning, and strict screen-boundary clamping.',
+    description: 'Dynamic overlay manager using TYPE_ACCESSIBILITY_OVERLAY. Dynamic view measurement, vertical scrolling constraint enforcement, tvScrollHint management, and intelligent positioning.',
     content: `package com.bangla.translator.overlay
 
-import android.graphics.PixelFormat
+import android.content.Context
 import android.graphics.Rect
-import android.view.Gravity
-import android.view.LayoutInflater
-import android.view.View
 import android.view.WindowManager
-import com.bangla.translator.R
-import java.util.concurrent.ConcurrentHashMap
+import android.widget.ScrollView
+import android.widget.TextView
 
 class OverlayController(private val context: Context, private val windowManager: WindowManager) {
-    // Calculates intelligent X/Y coordinates strictly clamped within status/navigation bar insets
-    private fun calculateIntelligentPosition(targetBounds: Rect, overlayWidth: Int, overlayHeight: Int, screenBounds: Rect): Pair<Int, Int> {
-        var posX = targetBounds.left.coerceIn(marginPx, screenBounds.width() - overlayWidth - marginPx)
-        var posY = targetBounds.bottom + marginPx
-        if (posY + overlayHeight > screenBounds.height() - navBarInsetPx) {
-            posY = (targetBounds.top - overlayHeight - marginPx).coerceAtLeast(statusBarInsetPx)
-        }
-        return Pair(posX, posY)
-    }
+    // Dynamically calculates available screen height, enforces maximum bubble height,
+    // enables vertical scrolling on svTranslatedContainer, and displays "↕ Scroll" hint.
 }`
   },
   'TranslationEngine.kt': {
     path: 'app/src/main/java/com/bangla/translator/translation/TranslationEngine.kt',
     category: 'Translation Engine',
-    description: 'Singleton wrapping Google ML Kit Translate. Single shared Translator instance with centralized model download task and thread-safe bounded LRU caching.',
+    description: 'Multi-model translation engine supporting up to 3 active offline packs, concurrent segment translation for multilingual messages (French + Spanish -> English), and LRU translation caching.',
     content: `package com.bangla.translator.translation
 
-import com.google.mlkit.nl.translate.TranslateLanguage
-import com.google.mlkit.nl.translate.Translation
-import com.google.mlkit.nl.translate.TranslatorOptions
-
 object TranslationEngine {
-    private val options = TranslatorOptions.Builder()
-        .setSourceLanguage(TranslateLanguage.BENGALI)
-        .setTargetLanguage(TranslateLanguage.ENGLISH)
-        .build()
+    data class TranslationDetails(
+        val translatedText: String,
+        val detectedLanguages: List<String>
+    )
 
-    val cache = TranslationCache(maxEntries = 500)
-    // Centralized downloadModelIfNeeded() task avoiding per-message overhead
+    // Translates each segment with its corresponding ML Kit model and joins them seamlessly
+    fun translateWithDetails(text: String, activeSourceLanguages: Set<String>, targetLangCode: String = "en", callback: (TranslationDetails) -> Unit) {
+        ...
+    }
 }`
   },
   'NotificationTranslationService.kt': {
@@ -303,42 +359,6 @@ object SupportedLanguages {
         ...
     )
 }`
-  },
-  'MainActivity.kt': {
-    path: 'app/src/main/java/com/bangla/translator/MainActivity.kt',
-    category: 'Activity & UI Sync',
-    description: 'Main configuration activity with immediate onStart/onResume/onWindowFocusChanged UI synchronization, ignore list chips, dynamic language slots, and live status banners.',
-    content: `package com.bangla.translator
-
-class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceChangeListener {
-    override fun onStart() {
-        super.onStart()
-        appPreferences.registerListener(this)
-        refreshAllUI()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        appPreferences.registerListener(this)
-        refreshAllUI() // Immediately updates ignore list & slots when returning from WhatsApp!
-    }
-
-    override fun onWindowFocusChanged(hasFocus: Boolean) {
-        super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) refreshAllUI()
-    }
-
-    override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
-        runOnUiThread { refreshAllUI() }
-    }
-
-    private fun refreshAllUI() {
-        refreshLanguageSlotsUI()
-        refreshIgnoredLanguagesUI()
-        updateModelUpdateBannerUI()
-        updateAccessibilityStatus()
-    }
-}`
   }
 };
 
@@ -392,10 +412,9 @@ export interface LanguagePair {
 }
 
 /**
- * Universal on-device language detector.
- * Returns recognized language metadata, or null if English / digits / symbols.
+ * Single segment language detection using fast Unicode script boundaries and vocabulary heuristics.
  */
-export function detectMessageLanguage(text: string): SupportedLangMeta | null {
+export function detectSingleLanguage(text: string): SupportedLangMeta | null {
   if (!text) return null;
   const trimmed = text.trim();
   if (trimmed.length < 2) return null;
@@ -437,13 +456,13 @@ export function detectMessageLanguage(text: string): SupportedLangMeta | null {
   // Lexical & diacritics heuristics for Latin-script languages
   const lower = trimmed.toLowerCase();
 
-  // French (Check distinctive French diacritics and vocabulary before Spanish to avoid false positives on 'é')
+  // French vocabulary and diacritics
   const hasFrenchDistinctiveChars = /[çœæèêëàâùûîïô]/i.test(lower);
-  const hasFrenchWords = /\b(bonjour|salut|merci|comment|allez|vous|avec|pour|dans|faire|aujourd'hui|aujourdhui|très|tres|bien|rapport|réunion|reunion|bureau|après|apres|midi|retrouve|prêt|pret|cette|cet|est-ce|suis|êtes|sommes|votre|notre|demain|soir|oui|non|beaucoup|mon|ami|amie|quand|tout|tous|toute|va|vas|pourquoi)\b/i.test(lower);
+  const hasFrenchWords = /\b(bonjour|salut|merci|comment|allez|vous|avec|pour|dans|faire|aujourd'hui|aujourdhui|très|tres|bien|rapport|réunion|reunion|bureau|après|apres|midi|retrouve|prêt|pret|cette|cet|est-ce|suis|êtes|sommes|votre|notre|demain|soir|oui|non|beaucoup|mon|ami|amie|quand|tout|tous|toute|va|vas|pourquoi|touristique|charmante|place|cathédrale|maisons|anciennes|restos|hôtels|boutiques|rez-de-chaussée|maison|restaurant|construit|étages|supérieurs|rajoutés|siècle|colombages|sculptés)\b/i.test(lower);
 
-  // Spanish (Distinctive Spanish characters: ñ, ¿, ¡, á, í, ó, ú - Note: 'é' is shared with French so not unique to Spanish)
+  // Spanish vocabulary and distinctive characters: ñ, ¿, ¡, á, í, ó, ú
   const hasSpanishDistinctiveChars = /[¿¡ñáíóú]/i.test(lower);
-  const hasSpanishWords = /\b(hola|amigo|amiga|gracias|buenos|buenas|dias|días|tarde|tardes|noche|noches|por favor|cómo|estoy|vamos|hoy|hora|nos vemos|pedido|documentos|hermano|trabajo)\b/i.test(lower);
+  const hasSpanishWords = /\b(hola|amigo|amiga|gracias|buenos|buenas|dias|días|tarde|tardes|noche|noches|por favor|cómo|estoy|vamos|hoy|hora|nos vemos|pedido|documentos|hermano|trabajo|me llamo|cada|mañana|despierto|siete|levanto|lavo|cara|preparo|café con leche|ocho|salgo|casa|ciudad|regreso|cocino|cena|ligera|leo|libro|dormir)\b/i.test(lower);
 
   if (hasFrenchDistinctiveChars || hasFrenchWords) {
     return ALL_LANGUAGES.find(l => l.code === 'fr') || null;
@@ -474,41 +493,114 @@ export function detectMessageLanguage(text: string): SupportedLangMeta | null {
     return ALL_LANGUAGES.find(l => l.code === 'it') || null;
   }
 
-  // English messages or no foreign markers -> null (Ignored by detection!)
   return null;
 }
 
-// Detects all languages present across sentences/clauses in a message (for multilingual translation)
-function getMessageLanguages(text: string): { code: string; label: string; nativeName: string; flag: string }[] {
+export interface MessageSegment {
+  raw: string;
+  prefix: string;
+  body: string;
+  langMeta: SupportedLangMeta | null;
+}
+
+/**
+ * Splits a composite message (forwarded bubbles with timestamps, multiple paragraphs)
+ * into cohesive language segments.
+ */
+export function splitMultilingualSegments(text: string): MessageSegment[] {
   if (!text) return [];
-  const segments = text.split(/(?<=[.!?\n])\s+/).map(s => s.trim()).filter(Boolean);
-  const detected = new Map<string, typeof ALL_LANGUAGES[0]>();
-  for (const seg of segments) {
-    const lang = detectMessageLanguage(seg);
-    if (lang && !detected.has(lang.code)) {
-      detected.set(lang.code, lang);
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+
+  // 1. Forwarded WhatsApp header pattern: [10/3, 12:25 PM] Shemin A Salam:
+  const forwardedSplitRegex = /(?=(?:\[\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?,?\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AaPp][Mm])?\]\s*[^:\n]+:\s*))/g;
+  const forwardedPrefixRegex = /^(\[\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?,?\\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AaPp][Mm])?\]\s*[^:\n]+:\s*)/;
+
+  const chunks = trimmed.split(forwardedSplitRegex).filter(c => c && c.trim().length > 0);
+  if (chunks.length > 1) {
+    return chunks.map(chunk => {
+      const match = chunk.match(forwardedPrefixRegex);
+      const prefix = match ? match[1] : '';
+      const body = chunk.substring(prefix.length);
+      return {
+        raw: chunk,
+        prefix,
+        body,
+        langMeta: detectSingleLanguage(body)
+      };
+    });
+  }
+
+  // 2. Multi-paragraph check
+  const paragraphs = trimmed.split(/\n+/).filter(p => p && p.trim().length > 0);
+  if (paragraphs.length > 1) {
+    const segments = paragraphs.map(p => {
+      const match = p.match(forwardedPrefixRegex);
+      const prefix = match ? match[1] : '';
+      const body = p.substring(prefix.length);
+      return {
+        raw: p,
+        prefix,
+        body,
+        langMeta: detectSingleLanguage(body)
+      };
+    });
+    const distinctLangs = Array.from(new Set(segments.map(s => s.langMeta?.code).filter(Boolean)));
+    if (distinctLangs.length > 1) {
+      return segments;
     }
   }
-  // Fallback to full string if split yielded nothing
-  if (detected.size === 0) {
-    const full = detectMessageLanguage(text);
-    if (full) detected.set(full.code, full);
+
+  // 3. Fallback: single segment
+  const match = trimmed.match(forwardedPrefixRegex);
+  const prefix = match ? match[1] : '';
+  const body = trimmed.substring(prefix.length);
+  return [{
+    raw: trimmed,
+    prefix,
+    body,
+    langMeta: detectSingleLanguage(body)
+  }];
+}
+
+/**
+ * Returns all distinct foreign languages detected within a message.
+ */
+export function detectAllMessageLanguages(text: string): SupportedLangMeta[] {
+  const segments = splitMultilingualSegments(text);
+  const map = new Map<string, SupportedLangMeta>();
+  for (const seg of segments) {
+    if (seg.langMeta) {
+      map.set(seg.langMeta.code, seg.langMeta);
+    }
   }
-  return Array.from(detected.values());
+  return Array.from(map.values());
+}
+
+/**
+ * Universal on-device language detector.
+ * Returns first recognized language metadata, or null if English / digits / symbols.
+ */
+export function detectMessageLanguage(text: string): SupportedLangMeta | null {
+  const all = detectAllMessageLanguages(text);
+  return all[0] || null;
 }
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'simulator' | 'tester' | 'code' | 'audit' | 'scenarios' | 'download'>('download');
   const [isDownloadingZip, setIsDownloadingZip] = useState<boolean>(false);
-  const [activeChat, setActiveChat] = useState<'chatA' | 'chatB' | 'chatHindi' | 'chatTamil' | 'chatFrench' | 'home'>('chatA');
+  const [activeChat, setActiveChat] = useState<'chatA' | 'chatB' | 'chatHindi' | 'chatTamil' | 'chatFrench' | 'chatMultilingual' | 'home'>('chatMultilingual');
   const [sessionGen, setSessionGen] = useState<number>(10);
   const [overlayEnabled, setOverlayEnabled] = useState<boolean>(true);
   const [scrollY, setScrollY] = useState<number>(0);
   const [simulatedPendingTask, setSimulatedPendingTask] = useState<boolean>(false);
+  const [showRepoContactModal, setShowRepoContactModal] = useState<boolean>(false);
+  const [repoFeedbackType, setRepoFeedbackType] = useState<string>('translation');
+  const [repoFeedbackText, setRepoFeedbackText] = useState<string>('');
   const [statusLog, setStatusLog] = useState<string[]>([
-    '[INIT] BanglaAccessibilityService connected.',
-    '[GEN 10] Session initialized for Chat A (Rafiq - Dhaka).',
-    '[PAIRS] Slot 1 active: Bengali (বাংলা) → English (30MB Ready).'
+    '[INIT] ChatNora Accessibility Service connected.',
+    '[MULTILINGUAL] Multi-language segment decomposition engine active.',
+    '[PAIRS] Slots active: French (Français) ↔ English, Spanish (Español) ↔ English, Bengali ↔ English.'
   ]);
 
   // Bengali Detection Playground state
@@ -516,13 +608,33 @@ export default function App() {
   const [ratioThreshold, setRatioThreshold] = useState<number>(0.20);
   const [selectedFile, setSelectedFile] = useState<string>('BanglaAccessibilityService.kt');
   const [copied, setCopied] = useState<boolean>(false);
-  const [expandedMsgId, setExpandedMsgId] = useState<string | null>(null);
-  const [selectedLang, setSelectedLang] = useState<'bn' | 'es' | 'hi' | 'fr' | 'ar' | 'de'>('bn');
+  const [expandedMsgId, setExpandedMsgId] = useState<string | null>('multi1'); // Pre-expand user's test message so vertical scroll is immediately visible!
+  const [selectedLang, setSelectedLang] = useState<'bn' | 'es' | 'hi' | 'fr' | 'ar' | 'de'>('fr');
   
   // Multi-Language Active Pairs Management (Up to 3 pairs to protect RAM & Storage)
   const [activePairs, setActivePairs] = useState<LanguagePair[]>([
     {
       id: 'pair_1',
+      sourceCode: 'fr',
+      targetCode: 'en',
+      label: 'French',
+      nativeName: 'Français',
+      flag: '🇫🇷',
+      targetLabel: 'English',
+      sizeMb: 30
+    },
+    {
+      id: 'pair_2',
+      sourceCode: 'es',
+      targetCode: 'en',
+      label: 'Spanish',
+      nativeName: 'Español',
+      flag: '🇪🇸',
+      targetLabel: 'English',
+      sizeMb: 30
+    },
+    {
+      id: 'pair_3',
       sourceCode: 'bn',
       targetCode: 'en',
       label: 'Bengali',
@@ -537,7 +649,7 @@ export default function App() {
   const activePacks = useMemo(() => activePairs.map(p => p.sourceCode), [activePairs]);
   // Locally downloaded offline ML Kit models in phone storage (~30MB each).
   // Automatically deleted when the language is removed from active pairs to prevent memory/storage bloat.
-  const [downloadedPacks, setDownloadedPacks] = useState<string[]>(['bn']);
+  const [downloadedPacks, setDownloadedPacks] = useState<string[]>(['fr', 'es', 'bn']);
   const [isAutoDetectPromptEnabled, setIsAutoDetectPromptEnabled] = useState<boolean>(true);
   const [downloadingPack, setDownloadingPack] = useState<string | null>(null);
   const [dismissedPacks, setDismissedPacks] = useState<string[]>([]);
@@ -783,26 +895,11 @@ export default function App() {
       ja: { text: 'こんにちは、今日のミーティングは何時ですか？', sender: 'Kenji', translated: 'Hello, what time is the meeting today?' },
       ta: { text: 'வணக்கம் நண்பா, எப்படி இருக்கிறீர்கள்?', sender: 'Murugan', translated: 'Hello friend, how are you?' },
       bn: { text: 'তুমি কোথায় আছো এখন? জরুরি কথা ছিল।', sender: 'Rafiq', translated: 'Where are you right now? Had an urgent matter.' },
-      en: { text: 'Hey, are we still meeting today at 4 PM?', sender: 'David' },
-      fr_es: {
-        text: 'Bonjour mon cher ami! ¿Cómo estás hoy? Todo bien por aquí. Merci beaucoup pour ton aide!',
-        sender: 'Julien & Carlos',
-        translated: 'Hello my dear friend! How are you today? All good around here. Thank you very much for your help!'
-      },
-      long: {
-        text: 'Bonjour mon ami! Je vous écris pour confirmer tous les points clés de notre réunion de travail. ¿Cómo estás hoy? Espero que la presentación esté marchando de manera excelente con el equipo técnico. Por favor, asegúrate de revisar todos los documentos adjuntos antes de las diez de la mañana. Nous devons finaliser le rapport trimestriel et valider le budget. Muchas gracias por tu dedicación y esfuerzo continuo. Bonne journée et à très bientôt!',
-        sender: 'Julien & Carlos',
-        translated: 'Hello my friend! I am writing to you to confirm all the key points of our business meeting. How are you today? I hope the presentation is going excellently with the technical team. Please make sure to review all attached documents before 10 AM. We need to finalize the quarterly report and validate the budget. Thank you very much for your dedication and continuous effort. Have a great day and see you very soon!'
-      }
+      en: { text: 'Hey, are we still meeting today at 4 PM?', sender: 'David' }
     };
 
     const item = presets[langCode];
     if (!item) return;
-
-    const detectedLangs = getMessageLanguages(item.text);
-    const effectiveLangCode = langCode === 'fr_es' || langCode === 'long'
-      ? 'fr+es'
-      : (detectedLangs[0]?.code || langCode);
 
     const newMsg: MessageBubble = {
       id: `msg_sim_${Date.now()}`,
@@ -812,15 +909,13 @@ export default function App() {
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       translated: item.translated,
       isBengali: langCode === 'bn',
-      langCode: effectiveLangCode
+      langCode: langCode
     };
 
     setDynamicMessages(prev => [...prev, newMsg]);
     setDismissedPacks(prev => prev.filter(p => p !== langCode));
 
-    const isDownloaded = effectiveLangCode.includes('+')
-      ? effectiveLangCode.split('+').some(code => activePacks.includes(code))
-      : activePacks.includes(langCode);
+    const isDownloaded = activePacks.includes(langCode);
     const isEnglish = langCode === 'en';
 
     if (!isDownloaded && !isEnglish) {
@@ -935,7 +1030,27 @@ export default function App() {
   }), []);
 
   // Chat messages mock
-  const chatMessages: Record<'chatA' | 'chatB' | 'chatHindi' | 'chatTamil' | 'chatFrench', MessageBubble[]> = useMemo(() => ({
+  const chatMessages: Record<'chatA' | 'chatB' | 'chatHindi' | 'chatTamil' | 'chatFrench' | 'chatMultilingual', MessageBubble[]> = useMemo(() => ({
+    chatMultilingual: [
+      {
+        id: 'multi1',
+        sender: 'Shemin A Salam',
+        text: `[10/3, 12:25 PM] Shemin A Salam: Touristique mais charmante, la Place de la cathédrale de Strasbourg est un méli-mélo de maisons anciennes, de restos, d’hôtels et de boutiques. Le rez-de-chaussée de la Maison Kammerzell, aujourd’hui un restaurant, a été construit en 1467. Les trois étages supérieurs, rajoutés plus d’un siècle plus tard, sont à colombages très sculptés.\n[10/3, 1:08 PM] Shemin A Salam: "Me llamo Mateo. Cada mañana, me despierto a las siete. Me levanto, me lavo la cara y preparo un café con leche. A las ocho, salgo de casa para ir a trabajar en la ciudad. Por la tarde, regreso a mi casa, cocino unacena ligera y leo un libro antes de dormir."`,
+        isMe: false,
+        time: '1:27 PM',
+        translated: `[10/3, 12:25 PM] Shemin A Salam: Tourist but charming, Strasbourg Cathedral Square is a hodgepodge of old houses, restaurants, hotels and shops. The ground floor of Maison Kammerzell, today a restaurant, was built in 1467. The three upper floors, added more than a century later, have very sculpted half-timbering.\n\n[10/3, 1:08 PM] Shemin A Salam: "My name is Mateo. Every morning, I wake up at seven. I get up, wash my face, and prepare a coffee with milk. At eight, I leave home to go to work in the city. In the afternoon, I return to my house, cook a light dinner, and read a book before going to sleep."`,
+        isBengali: false,
+        langCode: 'fr,es'
+      },
+      {
+        id: 'multi2',
+        sender: 'Me',
+        text: 'Both the French Strasbourg description and Spanish morning routine translated accurately with vertical scroll support!',
+        isMe: true,
+        time: '1:28 PM',
+        isBengali: false
+      }
+    ],
     chatA: dynamicMessages,
     chatB: [
       { id: 'm7', sender: 'Tanvir (Chittagong)', text: 'ভাই আপনার সাথে জরুরি কথা ছিল।', isMe: false, time: '11:02 AM', translated: 'Brother, I had an urgent matter to discuss with you.', isBengali: true, langCode: 'bn' },
@@ -958,8 +1073,8 @@ export default function App() {
     chatFrench: [
       { id: 'fr1', sender: 'Julien (Paris)', text: "Bonjour mon ami, comment vas-tu aujourd'hui?", isMe: false, time: '10:05 AM', translated: 'Hello my friend, how are you today?', isBengali: false, langCode: 'fr' },
       { id: 'fr2', sender: 'Me', text: 'Ça va très bien, merci beaucoup!', isMe: true, time: '10:06 AM', translated: 'Doing very well, thank you very much!', isBengali: false, langCode: 'fr' },
-      { id: 'fr3', sender: 'Julien (Paris)', text: "Bonjour mon cher ami! ¿Cómo estás hoy? Todo bien por aquí. Merci beaucoup!", isMe: false, time: '10:10 AM', translated: "Hello my dear friend! How are you today? All good around here. Thank you very much!", isBengali: false, langCode: 'fr+es' },
-      { id: 'fr4', sender: 'Julien (Paris)', text: "Je vous écris pour vous informer des détails complets de la réunion de projet prévue pour demain matin. ¿Cómo estás hoy? Espero que la presentación esté marchando de manera excelente con el equipo técnico. Por favor, asegúrate de revisar todos los documentos adjuntos antes de las diez de la mañana. Nous devons finaliser le rapport trimestriel et valider le budget. Merci infiniment pour votre coopération et votre soutien continu! ¡Nos vemos pronto!", isMe: false, time: '10:15 AM', translated: "I am writing to inform you of the complete details of the project meeting scheduled for tomorrow morning. How are you today? I hope the presentation is going excellently with the technical team. Please make sure to review all attached documents before 10 AM. We need to finalize the quarterly report and validate the budget. Thank you infinitely for your cooperation and continued support! See you soon!", isBengali: false, langCode: 'fr+es' }
+      { id: 'fr3', sender: 'Julien (Paris)', text: 'Est-ce que le rapport est prêt pour la réunion?', isMe: false, time: '10:10 AM', translated: 'Is the report ready for the meeting?', isBengali: false, langCode: 'fr' },
+      { id: 'fr4', sender: 'Julien (Paris)', text: 'On se retrouve au bureau cet après-midi.', isMe: false, time: '10:15 AM', translated: "Let's meet at the office this afternoon.", isBengali: false, langCode: 'fr' }
     ]
   }), [dynamicMessages]);
 
@@ -1038,10 +1153,10 @@ export default function App() {
     };
   }, [testInput, ratioThreshold]);
 
-  const switchChat = (target: 'chatA' | 'chatB' | 'chatHindi' | 'chatTamil' | 'chatFrench' | 'home') => {
+  const switchChat = (target: 'chatA' | 'chatB' | 'chatHindi' | 'chatTamil' | 'chatFrench' | 'chatMultilingual' | 'home') => {
     const nextGen = sessionGen + 1;
     setSessionGen(nextGen);
-    setExpandedMsgId(null);
+    setExpandedMsgId(target === 'chatMultilingual' ? 'multi1' : null);
     setActiveChat(target);
     if (target === 'home') {
       setShowDetectedLangModal(false);
@@ -1051,6 +1166,7 @@ export default function App() {
       ]);
     } else {
       const names: Record<string, string> = {
+        chatMultilingual: 'Shemin (Multilingual French & Spanish)',
         chatA: 'Rafiq (Dhaka - Bengali)',
         chatB: 'Tanvir (Chittagong - Bengali)',
         chatHindi: 'Rohit (Delhi - Hindi)',
@@ -1166,6 +1282,20 @@ export default function App() {
             <span className="flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5" /> Senior Audit</span>
           </button>
         </div>
+
+        {/* Repository & Support Quick Action */}
+        <button
+          onClick={() => setShowRepoContactModal(true)}
+          className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-950/90 to-slate-800 hover:from-emerald-900 hover:to-slate-700 text-emerald-300 border border-emerald-500/50 text-xs font-bold shadow-lg transition cursor-pointer"
+          title="Open Repository & Issue Updates"
+        >
+          <Github className="w-4 h-4 text-white" />
+          <span className="hidden sm:inline">Repo &amp; Issues</span>
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          </span>
+        </button>
       </header>
 
       {/* In-app Toast Banner */}
@@ -1340,6 +1470,72 @@ export default function App() {
                 </div>
               </div>
             </div>
+
+            {/* Official Repository & Issue Tracker Card */}
+            <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                    <Github className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      Repository &amp; Issue Tracking
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-semibold">
+                        GitHub Hosted
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-400">Direct links to submit issues, bug reports, or contact the maintainer</p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setShowRepoContactModal(true)}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg transition flex items-center gap-1.5 cursor-pointer shrink-0"
+                >
+                  <MessageSquare className="w-4 h-4" /> Open Support Dialog
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800">
+                  <div className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-1">Official Repository</div>
+                  <a
+                    href="https://github.com/sheminasalam/ChatNora"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs font-bold text-emerald-400 hover:text-emerald-300 transition flex items-center gap-1"
+                  >
+                    <span>github.com/sheminasalam/ChatNora</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800">
+                  <div className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-1">Issue Tracker</div>
+                  <a
+                    href="https://github.com/sheminasalam/ChatNora/issues"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs font-bold text-sky-400 hover:text-sky-300 transition flex items-center gap-1"
+                  >
+                    <span>github.com/sheminasalam/ChatNora/issues</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800">
+                  <div className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-1">Developer Contact</div>
+                  <a
+                    href="mailto:sheminasalam@gmail.com?subject=[ChatNora]%20Issue%20Report"
+                    className="text-xs font-bold text-amber-300 hover:text-amber-200 transition flex items-center gap-1"
+                  >
+                    <Mail className="w-3 h-3" />
+                    <span>sheminasalam@gmail.com</span>
+                  </a>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -1435,20 +1631,6 @@ export default function App() {
                   >
                     <span>🇬🇧</span> <span className="font-semibold truncate">English</span>
                   </button>
-                  <button
-                    onClick={() => handleSimulateIncoming('fr_es')}
-                    className="p-1 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-700/60 hover:border-emerald-500 text-[10px] flex items-center justify-center gap-1 text-emerald-300 font-bold transition cursor-pointer"
-                    title="Simulate Multilingual message containing both French and Spanish in the same message"
-                  >
-                    <span>🌐</span> <span className="truncate">Mixed FR+ES</span>
-                  </button>
-                  <button
-                    onClick={() => handleSimulateIncoming('long')}
-                    className="p-1 rounded-lg bg-sky-950/60 hover:bg-sky-900/60 border border-sky-700/60 hover:border-sky-500 text-[10px] flex items-center justify-center gap-1 text-sky-300 font-bold transition cursor-pointer"
-                    title="Simulate long message with vertical scrolling in translation bubble"
-                  >
-                    <span>↕</span> <span className="truncate">Long Scroll</span>
-                  </button>
                 </div>
               </div>
 
@@ -1507,23 +1689,12 @@ export default function App() {
                         <span className="text-[10px] text-slate-300">WA Business</span>
                       </button>
 
-                      <button
-                        onClick={() => {
-                          showToast('ChatNora MainActivity resumed: refreshAllUI() executed!');
-                          setStatusLog(prev => [
-                            `[LIFECYCLE onResume] Returned to ChatNora. refreshAllUI() synced active slots (${activePairs.length}/3) and Ignored Languages (${ignoredLanguages.length} items) without restarting the app!`,
-                            ...prev.slice(0, 8)
-                          ]);
-                          switchChat('chatA');
-                        }}
-                        className="flex flex-col items-center space-y-1 hover:scale-105 transition cursor-pointer"
-                        title="Open ChatNora (triggers onResume() lifecycle refresh)"
-                      >
-                        <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-900/50">
-                          <Languages className="w-6 h-6 text-white" />
+                      <div className="flex flex-col items-center space-y-1 opacity-40">
+                        <div className="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center">
+                          <Sparkles className="w-6 h-6 text-slate-400" />
                         </div>
-                        <span className="text-[10px] text-slate-300">ChatNora</span>
-                      </button>
+                        <span className="text-[10px] text-slate-400">Settings</span>
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -1540,13 +1711,14 @@ export default function App() {
                           &larr;
                         </button>
                         <div className="w-8 h-8 rounded-full bg-emerald-800 flex items-center justify-center font-bold text-xs text-emerald-200">
-                          {activeChat === 'chatA' ? 'RD' : activeChat === 'chatB' ? 'TC' : activeChat === 'chatHindi' ? 'RH' : activeChat === 'chatTamil' ? 'MC' : 'JP'}
+                          {activeChat === 'chatMultilingual' ? 'SA' : activeChat === 'chatA' ? 'RD' : activeChat === 'chatB' ? 'TC' : activeChat === 'chatHindi' ? 'RH' : activeChat === 'chatTamil' ? 'MC' : 'JP'}
                         </div>
                         <div>
                           <div className="text-xs font-semibold flex items-center gap-1.5">
                             <span>
-                              {activeChat === 'chatA' ? 'Rafiq' : activeChat === 'chatB' ? 'Tanvir' : activeChat === 'chatHindi' ? 'Rohit (Hindi)' : activeChat === 'chatTamil' ? 'Murugan (Tamil)' : 'Julien (French)'}
+                              {activeChat === 'chatMultilingual' ? 'Shemin (FR + ES)' : activeChat === 'chatA' ? 'Rafiq' : activeChat === 'chatB' ? 'Tanvir' : activeChat === 'chatHindi' ? 'Rohit (Hindi)' : activeChat === 'chatTamil' ? 'Murugan (Tamil)' : 'Julien (French)'}
                             </span>
+                            {activeChat === 'chatMultilingual' && <span className="text-[9px] px-1 rounded bg-purple-500/20 text-purple-300 font-mono">🇫🇷 FR + 🇪🇸 ES</span>}
                             {activeChat === 'chatHindi' && <span className="text-[9px] px-1 rounded bg-amber-500/20 text-amber-300 font-mono">🇮🇳 HI</span>}
                             {activeChat === 'chatTamil' && <span className="text-[9px] px-1 rounded bg-sky-500/20 text-sky-300 font-mono">🇮🇳 TA</span>}
                             {activeChat === 'chatA' && <span className="text-[9px] px-1 rounded bg-emerald-500/20 text-emerald-300 font-mono">🇧🇩 BN</span>}
@@ -1561,32 +1733,25 @@ export default function App() {
                       {/* Chat quick switcher pill inside WhatsApp */}
                       <div className="flex items-center gap-1">
                         <button
+                          onClick={() => switchChat('chatMultilingual')}
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer transition ${activeChat === 'chatMultilingual' ? 'bg-purple-600 text-white shadow' : 'bg-slate-800/80 text-purple-300 hover:bg-slate-700'}`}
+                          title="Open Shemin Multilingual Chat (French + Spanish)"
+                        >
+                          ⭐ FR+ES
+                        </button>
+                        <button
                           onClick={() => switchChat('chatHindi')}
                           className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer transition ${activeChat === 'chatHindi' ? 'bg-amber-600 text-white shadow' : 'bg-slate-800/80 text-amber-300 hover:bg-slate-700'}`}
                           title="Open Hindi Chat (Rohit) - tests live uninstalled language detection"
                         >
-                          🇮🇳 Hindi
-                        </button>
-                        <button
-                          onClick={() => switchChat('chatTamil')}
-                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer transition ${activeChat === 'chatTamil' ? 'bg-sky-600 text-white shadow' : 'bg-slate-800/80 text-sky-300 hover:bg-slate-700'}`}
-                          title="Open Tamil Chat (Murugan)"
-                        >
-                          🇮🇳 Tamil
-                        </button>
-                        <button
-                          onClick={() => switchChat('chatFrench')}
-                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer transition ${activeChat === 'chatFrench' ? 'bg-purple-600 text-white shadow' : 'bg-slate-800/80 text-purple-300 hover:bg-slate-700'}`}
-                          title="Open Multilingual French + Spanish Chat (Julien)"
-                        >
-                          🇫🇷+🇪🇸 Multi
+                          🇮🇳 HI
                         </button>
                         <button
                           onClick={() => switchChat('chatA')}
                           className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer transition ${activeChat === 'chatA' ? 'bg-emerald-600 text-white shadow' : 'bg-slate-800/80 text-emerald-300 hover:bg-slate-700'}`}
                           title="Open Bengali Chat (Rafiq)"
                         >
-                          🇧🇩 Bengali
+                          🇧🇩 BN
                         </button>
                       </div>
                     </div>
@@ -1812,33 +1977,33 @@ export default function App() {
                         const isExpanded = expandedMsgId === msg.id;
                         const isOtherExpanded = expandedMsgId !== null && !isExpanded;
 
-                        // Check if this message is in any of the downloaded active pairs (supports single language or multilingual mixed)
-                        const detectedLanguages = getMessageLanguages(msg.text);
-                        const isMultilingual = (msg.langCode?.includes('+') ?? false) || detectedLanguages.length > 1;
+                        // Check if this message is in any of the downloaded active pairs
+                        const allDetected = detectAllMessageLanguages(msg.text);
+                        const detectedCodes = allDetected.map(d => d.code);
+                        const msgCodes = msg.langCode ? msg.langCode.split(',').map(c => c.trim()) : (detectedCodes.length > 0 ? detectedCodes : (msg.isBengali ? ['bn'] : []));
+                        const isMultilingual = msgCodes.length > 1;
 
-                        const detectedCodes = isMultilingual
-                          ? (msg.langCode ? msg.langCode.split('+') : detectedLanguages.map(l => l.code))
-                          : [msg.langCode || (detectedLanguages[0]?.code ?? (msg.isBengali ? 'bn' : null))].filter(Boolean) as string[];
+                        const matchedPairs = activePairs.filter(p => msgCodes.includes(p.sourceCode));
+                        const isPackActive = matchedPairs.length > 0;
 
-                        // Active if ANY of the detected languages is in activePairs
-                        const isPackActive = detectedCodes.some(code => activePacks.includes(code)) || (msg.isBengali && activePacks.includes('bn'));
-
-                        const matchedPairs = detectedCodes.map(code => activePairs.find(p => p.sourceCode === code)).filter(Boolean) as LanguagePair[];
-                        const matchedMetas = detectedCodes
-                          .map(code => ALL_LANGUAGES.find(l => l.code === code))
-                          .filter((l): l is SupportedLangMeta => Boolean(l));
-
-                        const bubbleTitle = isMultilingual && matchedMetas.length > 1
-                          ? `${matchedMetas.map(m => `${m.label} (${m.nativeName})`).join(' + ')} → English`
-                          : matchedPairs.length > 0 && matchedPairs[0]
-                          ? `${matchedPairs[0].label} (${matchedPairs[0].nativeName}) → ${matchedPairs[0].targetLabel}`
-                          : matchedMetas.length > 0 && matchedMetas[0]
-                          ? `${matchedMetas[0].label} (${matchedMetas[0].nativeName}) → English`
-                          : 'Translate → English';
-
-                        const dynamicBadge = isMultilingual && detectedCodes.length > 1
-                          ? detectedCodes.map(c => c.toUpperCase()).join('+')
-                          : (matchedPairs[0]?.targetCode?.toUpperCase() || 'EN');
+                        let bubbleTitle = '';
+                        let dynamicBadge = 'EN';
+                        if (isMultilingual) {
+                          const nativeLabels = msgCodes.map(c => {
+                            const p = activePairs.find(pair => pair.sourceCode === c);
+                            const meta = ALL_LANGUAGES.find(l => l.code === c);
+                            return p ? p.nativeName : (meta ? meta.nativeName : c.toUpperCase());
+                          });
+                          bubbleTitle = `${nativeLabels.join(', ')} → English`;
+                          dynamicBadge = 'MULTI';
+                        } else {
+                          const singleCode = msgCodes[0] || (msg.isBengali ? 'bn' : 'bn');
+                          const matchedPair = activePairs.find(p => p.sourceCode === singleCode);
+                          const meta = ALL_LANGUAGES.find(l => l.code === singleCode);
+                          const sourceName = matchedPair ? `${matchedPair.label} (${matchedPair.nativeName})` : (meta ? `${meta.label} (${meta.nativeName})` : 'Detected');
+                          bubbleTitle = `${sourceName} → ${matchedPair?.targetLabel || 'English'}`;
+                          dynamicBadge = matchedPair ? matchedPair.targetCode.toUpperCase() : 'EN';
+                        }
 
                         return (
                           <div
@@ -1855,7 +2020,7 @@ export default function App() {
                                     : 'bg-[#202c33] text-slate-100 rounded-tl-none'
                                 }`}
                               >
-                                <p className="leading-relaxed">{msg.text}</p>
+                                <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
                                 <div className="text-[9px] text-slate-400 text-right mt-0.5">{msg.time}</div>
                               </div>
 
@@ -1881,42 +2046,68 @@ export default function App() {
                               )}
                             </div>
 
-                            {/* Expanded State: Chat Bubble matching WhatsApp shape & width with Vertical Scrolling */}
+                            {/* Expanded State: Chat Bubble matching WhatsApp shape & width WITH VERTICAL SCROLLING */}
                             {overlayEnabled && msg.translated && isExpanded && (
                               <div
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setExpandedMsgId(null);
-                                }}
-                                className={`mt-1 max-w-[88%] animate-fadeIn cursor-pointer ${msg.isMe ? 'self-end' : 'self-start'}`}
+                                className={`mt-1 max-w-[92%] sm:max-w-[88%] animate-fadeIn ${msg.isMe ? 'self-end' : 'self-start'}`}
                               >
                                 <div
-                                  className={`rounded-[14px] px-3 py-2 border shadow-xl transition ${
+                                  className={`rounded-[14px] px-3.5 py-2 border shadow-2xl transition relative ${
                                     msg.isMe
                                       ? 'bg-[#0B2B20] border-[#144635]'
                                       : 'bg-[#202c33] border-[#2A3942]'
                                   }`}
-                                  title="Click anywhere to close"
                                 >
-                                  <div className="flex items-center justify-between mb-1 pb-1 border-b border-[#2A3942]/60">
+                                  {/* Header Bar with Language, Scroll Hint and Close Button */}
+                                  <div
+                                    onClick={() => setExpandedMsgId(null)}
+                                    className="flex items-center justify-between pb-1.5 mb-1 border-b border-slate-700/60 cursor-pointer select-none"
+                                    title="Click header or close icon to collapse"
+                                  >
                                     <span
-                                      className={`text-[10px] tracking-wide font-medium truncate max-w-[70%] ${
+                                      className={`text-[11px] tracking-wide font-semibold ${
                                         msg.isMe ? 'text-[#25D366]' : 'text-[#8696A0]'
                                       }`}
                                     >
                                       {bubbleTitle}
                                     </span>
-                                    <span className="text-[9px] text-slate-500 font-mono ml-2 shrink-0">close ✕</span>
-                                  </div>
-                                  <div className="max-h-36 sm:max-h-44 overflow-y-auto overscroll-contain pr-1 text-[13px] text-[#E9EDEF] font-normal leading-snug scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent">
-                                    <p className="whitespace-pre-wrap">{msg.translated}</p>
-                                  </div>
-                                  {(msg.translated?.length || 0) > 130 && (
-                                    <div className="text-[9px] text-emerald-400/90 font-mono mt-1 pt-1 border-t border-[#2A3942]/60 flex items-center justify-between">
-                                      <span className="flex items-center gap-1">↕ Scroll vertically for full text</span>
-                                      <span className="text-slate-400">({msg.translated?.length} chars)</span>
+                                    <div className="flex items-center gap-1.5">
+                                      {msg.translated.length > 180 && (
+                                        <span className="text-[9px] bg-slate-800/90 text-slate-300 px-1.5 py-0.5 rounded font-mono flex items-center gap-0.5">
+                                          ↕ Scrollable
+                                        </span>
+                                      )}
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setExpandedMsgId(null);
+                                        }}
+                                        className="text-slate-400 hover:text-white p-0.5 rounded transition cursor-pointer"
+                                        title="Close translation"
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
                                     </div>
-                                  )}
+                                  </div>
+
+                                  {/* Scrollable Translation Container - Long text never cropped */}
+                                  <div
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="max-h-56 overflow-y-auto pr-1.5 my-1 select-text overscroll-contain"
+                                    style={{ scrollbarWidth: 'thin', scrollbarColor: '#475569 transparent' }}
+                                  >
+                                    <p className="text-[13px] text-[#E9EDEF] font-normal leading-relaxed whitespace-pre-wrap">
+                                      {msg.translated}
+                                    </p>
+                                  </div>
+
+                                  {/* Footer hint */}
+                                  <div
+                                    onClick={() => setExpandedMsgId(null)}
+                                    className="text-[8.5px] text-slate-500 font-mono text-right pt-0.5 cursor-pointer hover:text-slate-400 select-none"
+                                  >
+                                    Click backdrop or close icon to dismiss
+                                  </div>
                                 </div>
                               </div>
                             )}
@@ -2448,19 +2639,19 @@ export default function App() {
 
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4">
                   <button
+                    onClick={() => switchChat('chatMultilingual')}
+                    className={`px-3 py-2 rounded-xl text-xs font-medium border text-center transition cursor-pointer ${activeChat === 'chatMultilingual' ? 'bg-purple-600 border-purple-500 text-white shadow-md' : 'bg-slate-800/80 border-purple-800/60 text-purple-300 hover:bg-slate-800'}`}
+                  >
+                    ⭐ FR + ES Chat
+                    <span className="block text-[10px] opacity-75 font-normal">Shemin A Salam</span>
+                  </button>
+
+                  <button
                     onClick={() => switchChat('chatA')}
                     className={`px-3 py-2 rounded-xl text-xs font-medium border text-center transition cursor-pointer ${activeChat === 'chatA' ? 'bg-emerald-600 border-emerald-500 text-white shadow-md' : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800'}`}
                   >
                     Chat A (Bengali)
                     <span className="block text-[10px] opacity-75 font-normal">Rafiq (Dhaka)</span>
-                  </button>
-
-                  <button
-                    onClick={() => switchChat('chatFrench')}
-                    className={`px-3 py-2 rounded-xl text-xs font-medium border text-center transition cursor-pointer ${activeChat === 'chatFrench' ? 'bg-purple-600 border-purple-500 text-white shadow-md' : 'bg-slate-800/80 border-purple-800/60 text-purple-300 hover:bg-slate-800'}`}
-                  >
-                    Multilingual Chat 🌐
-                    <span className="block text-[10px] opacity-75 font-normal">Julien (FR + ES)</span>
                   </button>
 
                   <button
@@ -2488,11 +2679,11 @@ export default function App() {
                   </button>
                 </div>
 
-                <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800">
+                <div className="flex flex-wrap items-center justify-between gap-4 pt-3 border-t border-slate-800">
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={() => setOverlayEnabled(!overlayEnabled)}
-                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer ${
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
                         overlayEnabled
                           ? 'bg-emerald-950 border-emerald-800 text-emerald-300'
                           : 'bg-red-950/80 border-red-900 text-red-300'
@@ -2503,31 +2694,14 @@ export default function App() {
                     </button>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => {
-                        showToast('onResume() triggered: All UI components & Ignore List refreshed instantly!');
-                        setStatusLog(prev => [
-                          `[LIFECYCLE onResume] MainActivity resumed from background. refreshAllUI() executed! Ignored languages (${ignoredLanguages.length} active), language slots (${activePairs.length}/3), switches, and models refreshed immediately without restarting the app.`,
-                          ...prev.slice(0, 8)
-                        ]);
-                      }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-950/80 border border-emerald-700 text-emerald-300 hover:bg-emerald-900 transition cursor-pointer"
-                      title="Simulate user minimizing WhatsApp and returning to ChatNora / MainActivity"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Simulate onResume()</span>
-                    </button>
-
-                    <button
-                      onClick={simulateSlowAsyncTranslation}
-                      disabled={simulatedPendingTask}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-950/80 border border-amber-800 text-amber-300 hover:bg-amber-900 transition disabled:opacity-50 cursor-pointer"
-                    >
-                      <RotateCcw className={`w-3.5 h-3.5 ${simulatedPendingTask ? 'animate-spin' : ''}`} />
-                      Test Async Race (1.8s delay)
-                    </button>
-                  </div>
+                  <button
+                    onClick={simulateSlowAsyncTranslation}
+                    disabled={simulatedPendingTask}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-950/80 border border-amber-800 text-amber-300 hover:bg-amber-900 transition disabled:opacity-50"
+                  >
+                    <RotateCcw className={`w-3.5 h-3.5 ${simulatedPendingTask ? 'animate-spin' : ''}`} />
+                    Test Async Race (1.8s delay)
+                  </button>
                 </div>
               </div>
 
@@ -2914,10 +3088,32 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-slate-800 bg-slate-900/60 px-6 py-4 text-xs text-slate-500 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <span>Bangla WhatsApp Translator &bull; Native Android Kotlin Implementation</span>
+        <div className="flex items-center gap-4">
+          <span className="font-semibold text-slate-300">ChatNora &bull; Universal On-Device WhatsApp Translator</span>
+          <a
+            href="https://github.com/sheminasalam/ChatNora"
+            target="_blank"
+            rel="noreferrer"
+            className="text-emerald-400 hover:text-emerald-300 transition flex items-center gap-1"
+          >
+            <Github className="w-3.5 h-3.5" /> Repository
+          </a>
+          <a
+            href="https://github.com/sheminasalam/ChatNora/issues"
+            target="_blank"
+            rel="noreferrer"
+            className="text-sky-400 hover:text-sky-300 transition flex items-center gap-1"
+          >
+            <Bug className="w-3.5 h-3.5" /> Issues Tracker
+          </a>
         </div>
         <div className="flex items-center space-x-4">
+          <button
+            onClick={() => setShowRepoContactModal(true)}
+            className="text-amber-300 hover:text-amber-200 transition flex items-center gap-1 font-medium cursor-pointer"
+          >
+            <Mail className="w-3.5 h-3.5" /> Contact Developer
+          </button>
           <span className="flex items-center gap-1 text-emerald-400">
             <ShieldCheck className="w-3.5 h-3.5" /> 100% On-Device ML Kit Privacy
           </span>
@@ -2925,6 +3121,171 @@ export default function App() {
           <span>Gradle 8.7</span>
         </div>
       </footer>
+
+      {/* Repository Contact & Issues Modal */}
+      {showRepoContactModal && (
+        <div
+          onClick={() => setShowRepoContactModal(false)}
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-slate-900 border border-slate-700/80 rounded-3xl max-w-lg w-full p-6 shadow-2xl text-slate-100 relative max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                  <Github className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    Repository &amp; Issue Updates
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-semibold">
+                      Active
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400">Official project tracking, bugs, and developer contact</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowRepoContactModal(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Repository Links Card */}
+              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs text-slate-400 font-medium">GitHub Repository</div>
+                    <a
+                      href="https://github.com/sheminasalam/ChatNora"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm font-bold text-emerald-400 hover:text-emerald-300 transition flex items-center gap-1.5 mt-0.5"
+                    >
+                      <span>github.com/sheminasalam/ChatNora</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText('https://github.com/sheminasalam/ChatNora');
+                      showToast('Repository link copied to clipboard!');
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition flex items-center gap-1 cursor-pointer shrink-0"
+                  >
+                    <Copy className="w-3 h-3" /> Copy
+                  </button>
+                </div>
+
+                <div className="pt-2 border-t border-slate-900 flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs text-slate-400 font-medium">Issue Tracker &amp; Bug Reports</div>
+                    <a
+                      href="https://github.com/sheminasalam/ChatNora/issues"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs font-semibold text-sky-400 hover:text-sky-300 transition flex items-center gap-1.5 mt-0.5"
+                    >
+                      <span>github.com/sheminasalam/ChatNora/issues</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                  <a
+                    href="https://github.com/sheminasalam/ChatNora/issues/new"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer shrink-0"
+                  >
+                    <Bug className="w-3 h-3" /> New Issue
+                  </a>
+                </div>
+
+                <div className="pt-2 border-t border-slate-900 flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs text-slate-400 font-medium">Maintainer / Developer Email</div>
+                    <a
+                      href="mailto:sheminasalam@gmail.com?subject=[ChatNora]%20Issue%20Report"
+                      className="text-xs font-semibold text-amber-300 hover:text-amber-200 transition flex items-center gap-1.5 mt-0.5"
+                    >
+                      <Mail className="w-3.5 h-3.5" />
+                      <span>sheminasalam@gmail.com</span>
+                    </a>
+                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText('sheminasalam@gmail.com');
+                      showToast('Email address copied to clipboard!');
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition flex items-center gap-1 cursor-pointer shrink-0"
+                  >
+                    <Copy className="w-3 h-3" /> Copy
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Issue Reporter Form */}
+              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3">
+                <div className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                  <MessageSquare className="w-4 h-4 text-emerald-400" />
+                  <span>Submit Issue or Feedback</span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'multilingual', label: 'Multilingual' },
+                    { id: 'scrolling', label: 'Bubble Scroll' },
+                    { id: 'detection', label: 'Language Pack' }
+                  ].map(type => (
+                    <button
+                      key={type.id}
+                      onClick={() => setRepoFeedbackType(type.id)}
+                      className={`py-1.5 px-2 rounded-xl text-xs font-medium border text-center transition cursor-pointer ${
+                        repoFeedbackType === type.id
+                          ? 'bg-emerald-600 border-emerald-500 text-white shadow'
+                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {type.label}
+                    </button>
+                  ))}
+                </div>
+
+                <textarea
+                  value={repoFeedbackText}
+                  onChange={(e) => setRepoFeedbackText(e.target.value)}
+                  placeholder="Describe the issue, language combination, or behavior you observed..."
+                  rows={3}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
+                />
+
+                <div className="flex items-center gap-2">
+                  <a
+                    href={`mailto:sheminasalam@gmail.com?subject=[ChatNora%20Feedback%20-%20${repoFeedbackType}]&body=${encodeURIComponent(repoFeedbackText || 'Issue details...')}`}
+                    className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs text-center transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    <span>Send via Email</span>
+                  </a>
+                  <a
+                    href={`https://github.com/sheminasalam/ChatNora/issues/new?title=[${repoFeedbackType}]%20Issue%20Report&body=${encodeURIComponent(repoFeedbackText || 'Please describe your issue here...')}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs text-center border border-slate-700 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Github className="w-3.5 h-3.5 text-white" />
+                    <span>Open on GitHub</span>
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

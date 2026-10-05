@@ -327,7 +327,8 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
         // Check cache first for instant synchronous display
         val cached = TranslationEngine.cache.get(msg.normalizedText)
         if (cached != null) {
-            validateAndDisplay(msg, cached, taskGeneration)
+            val detectedLangs = com.bangla.translator.translation.LanguageDetector.detectAllLanguages(msg.normalizedText)
+            validateAndDisplay(msg, cached, taskGeneration, detectedLangs)
             return
         }
 
@@ -337,13 +338,13 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
             return
         }
 
-        TranslationEngine.translate(
+        TranslationEngine.translateWithDetails(
             text = msg.normalizedText,
             sourceCode = msg.languageCode,
-            onSuccess = { translatedText ->
+            onSuccess = { details ->
                 inFlightSet.remove(inFlightKey)
                 mainHandler.post {
-                    validateAndDisplay(msg, translatedText, taskGeneration)
+                    validateAndDisplay(msg, details.translatedText, taskGeneration, details.detectedLanguages)
                 }
             },
             onFailure = { error ->
@@ -364,7 +365,8 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
     private fun validateAndDisplay(
         msg: ScannedMessage,
         translatedText: String,
-        taskGeneration: Long
+        taskGeneration: Long,
+        detectedLangs: List<String> = emptyList()
     ) {
         val currentGen = sessionGeneration.get()
         if (taskGeneration != currentGen) {
@@ -387,29 +389,28 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
             return
         }
 
-        // Dynamically compute the exact language pair label for this specific message bubble (supports multilingual)
-        val isMultilingual = msg.languageCode.contains("+")
-        val codes = if (isMultilingual) {
-            msg.languageCode.split("+").filter { it.isNotBlank() }
+        // Dynamically compute the exact language pair label for this specific message bubble
+        val effectiveLangs = if (detectedLangs.isNotEmpty()) {
+            detectedLangs
+        } else if (msg.languageCode.isNotBlank()) {
+            msg.languageCode.split(",").filter { it.isNotBlank() }
         } else {
-            val detected = com.bangla.translator.translation.LanguageDetector.detectLanguage(msg.normalizedText)
-            listOf(if (msg.languageCode.isNotBlank()) msg.languageCode else (detected ?: appPreferences.sourceLanguageCode))
+            com.bangla.translator.translation.LanguageDetector.detectAllLanguages(msg.normalizedText)
         }
 
         val targetMeta = com.bangla.translator.data.SupportedLanguages.findByCode(appPreferences.targetLanguageCode)
-        val dynamicPairLabel = if (codes.size > 1) {
-            val srcNames = codes.map { code ->
-                val meta = com.bangla.translator.data.SupportedLanguages.findByCode(code)
-                "${meta.name} (${meta.nativeName})"
-            }.joinToString(" + ")
-            "$srcNames → ${targetMeta.name}"
+
+        val dynamicPairLabel = if (effectiveLangs.size > 1) {
+            val nativeNames = effectiveLangs.map { com.bangla.translator.data.SupportedLanguages.findByCode(it).nativeName }.distinct()
+            "${nativeNames.joinToString(", ")} → ${targetMeta.name}"
         } else {
-            val sourceMeta = com.bangla.translator.data.SupportedLanguages.findByCode(codes[0])
-            "${sourceMeta.name} (${sourceMeta.nativeName}) → ${targetMeta.name}"
+            val singleCode = effectiveLangs.firstOrNull() ?: appPreferences.sourceLanguageCode
+            val sourceMeta = com.bangla.translator.data.SupportedLanguages.findByCode(singleCode)
+            "${sourceMeta.nativeName} → ${targetMeta.name}"
         }
 
-        val dynamicBadgeLabel = if (codes.size > 1) {
-            codes.joinToString("+") { it.uppercase() }
+        val dynamicBadgeLabel = if (effectiveLangs.size > 1) {
+            "MULTI"
         } else {
             targetMeta.code.uppercase()
         }

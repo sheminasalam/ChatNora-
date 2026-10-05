@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -61,41 +62,14 @@ class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceCh
         TranslationEngine.checkModelAvailability()
     }
 
-    override fun onStart() {
-        super.onStart()
-        appPreferences.registerListener(this)
-        refreshAllUI()
-    }
-
     override fun onResume() {
         super.onResume()
         appPreferences.registerListener(this)
         refreshAllUI()
     }
 
-    override fun onRestart() {
-        super.onRestart()
-        refreshAllUI()
-    }
-
-    override fun onWindowFocusChanged(hasFocus: Boolean) {
-        super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) {
-            refreshAllUI()
-        }
-    }
-
-    override fun onStop() {
-        super.onStop()
-        appPreferences.unregisterListener(this)
-    }
-
     override fun onPause() {
         super.onPause()
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
         appPreferences.unregisterListener(this)
     }
 
@@ -479,6 +453,29 @@ class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceCh
         // Add Ignored Language Button
         binding.btnAddIgnoredLanguage.setOnClickListener {
             showAddIgnoredLanguageDialog()
+        }
+
+        // Repository & Support Actions
+        binding.btnReportGitHubIssue.setOnClickListener {
+            try {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/sheminasalam/ChatNora/issues"))
+                startActivity(intent)
+            } catch (e: Exception) {
+                Toast.makeText(this, "Could not open browser. Repository: github.com/sheminasalam/ChatNora", Toast.LENGTH_LONG).show()
+            }
+        }
+
+        binding.btnContactDevEmail.setOnClickListener {
+            try {
+                val intent = Intent(Intent.ACTION_SENDTO).apply {
+                    data = Uri.parse("mailto:sheminasalam@gmail.com")
+                    putExtra(Intent.EXTRA_SUBJECT, "[ChatNora] Bug Report & Issue Feedback")
+                    putExtra(Intent.EXTRA_TEXT, "Hello ChatNora Team,\n\nI would like to report an issue / request a feature:\n\nDevice: ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})\nApp Version: 2.0.0\n\nDetails:\n")
+                }
+                startActivity(Intent.createChooser(intent, "Contact Developer"))
+            } catch (e: Exception) {
+                Toast.makeText(this, "Email: sheminasalam@gmail.com", Toast.LENGTH_LONG).show()
+            }
         }
 
         refreshIgnoredLanguagesUI()
