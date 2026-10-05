@@ -24,11 +24,10 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * Requirements implemented:
  * 1. Icons are always strictly behind the translation bubble when expanded.
- * 2. Icon badge placed at the middle of the side away from the outer edge of the screen:
- *    - Outgoing (right): icon is on the LEFT of the bubble (at vertical middle).
- *    - Incoming (left): icon is on the RIGHT of the bubble (at vertical middle).
- *    This prevents collision with the text typing bar for the very last message!
- * 3. Tapping anywhere on the screen immediately closes the expanded bubble via a
+ * 2. Translation icons are all arranged neatly on the left side of the screen.
+ * 3. Expanded translation bubble matches the natural, comfortable WhatsApp bubble shape and width.
+ * 4. Vertical scrolling allows viewing arbitrarily long translations without cutoff.
+ * 5. Tapping anywhere on the screen immediately closes the expanded bubble via a
  *    transparent full-screen dismiss backdrop.
  */
 class OverlayController(
@@ -87,19 +86,14 @@ class OverlayController(
         var posY = candidateY
         val minGap = (6 * density).toInt()
 
-        // Collect all other active badge vertical intervals on the same outgoing/incoming side
+        // Collect all other active badge vertical intervals along the left side of the screen
         val occupiedIntervals = mutableListOf<Pair<Int, Int>>()
         for ((key, other) in activeOverlays) {
             if (key == currentKey) continue
             if (key == expandedDisplayKey) continue
             val otherRect = other.overlayScreenRect
             if (otherRect.isEmpty) continue
-
-            val otherScreenW = other.lastScreenBounds.width()
-            val otherIsOutgoing = other.currentBounds.right > otherScreenW * 0.78f || other.currentBounds.left > otherScreenW * 0.40f
-            if (otherIsOutgoing == isOutgoing) {
-                occupiedIntervals.add(Pair(otherRect.top - minGap, otherRect.bottom + minGap))
-            }
+            occupiedIntervals.add(Pair(otherRect.top - minGap, otherRect.bottom + minGap))
         }
 
         // Iteratively resolve any vertical overlap until posY is completely clear
@@ -216,7 +210,7 @@ class OverlayController(
             llExpanded.visibility = if (isExpanded) View.VISIBLE else View.GONE
 
             val maxAllowedWidth = (screenW - (marginPx * 2)).coerceAtLeast(minExpandedWidthPx)
-            val bubbleWidth = targetBounds.width().coerceIn(minExpandedWidthPx, maxAllowedWidth)
+            val bubbleWidth = (screenW * 0.85f).toInt().coerceIn((260 * density).toInt(), maxAllowedWidth)
 
             val measuredWidth: Int
             val measuredHeight: Int
@@ -252,7 +246,7 @@ class OverlayController(
                 measuredWidth = bubbleWidth
                 measuredHeight = overlayView.measuredHeight
 
-                var calculatedX = if (isOutgoing) targetBounds.right - measuredWidth else targetBounds.left
+                var calculatedX = if (isOutgoing) screenW - bubbleWidth - marginPx else marginPx
                 if (calculatedX + measuredWidth > screenW - marginPx) calculatedX = screenW - measuredWidth - marginPx
                 if (calculatedX < marginPx) calculatedX = marginPx
                 posX = calculatedX
@@ -264,7 +258,7 @@ class OverlayController(
                     (targetBounds.top - measuredHeight - gapPx).coerceAtLeast(statusBarInsetPx)
                 }
             } else {
-                // Collapsed State: Icon badge placed at the middle of the side away from the outer edge of screen!
+                // Collapsed State: All translation icons arranged neatly on the left side of the screen!
                 overlayView.measure(
                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
@@ -272,18 +266,9 @@ class OverlayController(
                 measuredWidth = overlayView.measuredWidth
                 measuredHeight = overlayView.measuredHeight
 
-                var calculatedX = if (isOutgoing) {
-                    // Outgoing bubble on right -> place icon on LEFT side of bubble
-                    targetBounds.left - measuredWidth - badgeGapPx
-                } else {
-                    // Incoming bubble on left -> place icon on RIGHT side of bubble
-                    targetBounds.right + badgeGapPx
-                }
-                if (calculatedX + measuredWidth > screenW - marginPx) calculatedX = screenW - measuredWidth - marginPx
-                if (calculatedX < marginPx) calculatedX = marginPx
-                posX = calculatedX
+                posX = marginPx
 
-                // Middle of the side of the bubble vertically with collision avoidance
+                // Middle of the bubble vertically with collision avoidance along the left side
                 val candidateY = targetBounds.centerY() - (measuredHeight / 2)
                 posY = adjustBadgeYToAvoidCollisions(
                     candidateY = candidateY,
@@ -427,7 +412,7 @@ class OverlayController(
         val isOutgoing = active.currentBounds.right > screenW * 0.78f || active.currentBounds.left > screenW * 0.40f
 
         val maxAllowedWidth = (screenW - (marginPx * 2)).coerceAtLeast(minExpandedWidthPx)
-        val bubbleWidth = active.currentBounds.width().coerceIn(minExpandedWidthPx, maxAllowedWidth)
+        val bubbleWidth = (screenW * 0.85f).toInt().coerceIn((260 * density).toInt(), maxAllowedWidth)
 
         val bottomLimit = if (active.lastInputBarTop != null && active.lastInputBarTop!! > statusBarInsetPx + (100 * density).toInt()) {
             active.lastInputBarTop!! - (4 * density).toInt()
@@ -466,7 +451,7 @@ class OverlayController(
             measuredWidth = bubbleWidth
             measuredHeight = active.view.measuredHeight
 
-            var calculatedX = if (isOutgoing) active.currentBounds.right - measuredWidth else active.currentBounds.left
+            var calculatedX = if (isOutgoing) screenW - bubbleWidth - marginPx else marginPx
             if (calculatedX + measuredWidth > screenW - marginPx) calculatedX = screenW - measuredWidth - marginPx
             if (calculatedX < marginPx) calculatedX = marginPx
             posX = calculatedX
@@ -478,7 +463,7 @@ class OverlayController(
             }
             active.view.elevation = 24 * density
         } else {
-            // Collapsed: middle of the side away from outer edge of screen
+            // Collapsed: All translation icons arranged neatly on the left side of the screen
             active.view.measure(
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
@@ -486,14 +471,7 @@ class OverlayController(
             measuredWidth = active.view.measuredWidth
             measuredHeight = active.view.measuredHeight
 
-            var calculatedX = if (isOutgoing) {
-                active.currentBounds.left - measuredWidth - badgeGapPx
-            } else {
-                active.currentBounds.right + badgeGapPx
-            }
-            if (calculatedX + measuredWidth > screenW - marginPx) calculatedX = screenW - measuredWidth - marginPx
-            if (calculatedX < marginPx) calculatedX = marginPx
-            posX = calculatedX
+            posX = marginPx
 
             val candidateY = active.currentBounds.centerY() - (measuredHeight / 2)
             posY = adjustBadgeYToAvoidCollisions(

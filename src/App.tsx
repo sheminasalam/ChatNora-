@@ -31,7 +31,6 @@ import {
   ShieldAlert,
   Bell,
   Github,
-  Mail,
   MessageSquare,
   Bug,
   ScrollText,
@@ -812,11 +811,26 @@ export default function App() {
   const [chatInputText, setChatInputText] = useState<string>('');
 
   // Model Update Notification & Version State in Settings
-  const [isModelUpdateAvailable, setIsModelUpdateAvailable] = useState<boolean>(true);
+  const [isModelUpdateAvailable, setIsModelUpdateAvailable] = useState<boolean>(false);
   const [isUpdatingModel, setIsUpdatingModel] = useState<boolean>(false);
-  const [currentModelVersion, setCurrentModelVersion] = useState<string>('v2.3');
+  const [currentModelVersion, setCurrentModelVersion] = useState<string>('v2.4');
   const [modelLatestVersion, setModelLatestVersion] = useState<string>('v2.4');
   const [modelUpdateProgress, setModelUpdateProgress] = useState<number>(0);
+
+  // Automatically delete any local language packs other than the active language pair, preventing spurious update suggestions
+  useEffect(() => {
+    const activeSourceCodes = new Set(activePairs.map(p => p.sourceCode));
+    const extraPacks = downloadedPacks.filter(code => !activeSourceCodes.has(code));
+    if (extraPacks.length > 0) {
+      setDownloadedPacks(prev => prev.filter(code => activeSourceCodes.has(code)));
+      setStatusLog(prev => [
+        `[STORAGE CLEANUP] Deleted ${extraPacks.length} orphaned language pack(s) (${extraPacks.map(c => c.toUpperCase()).join(', ')}) not in active language pair.`,
+        ...prev.slice(0, 8)
+      ]);
+    }
+    // Never show update suggestions for deleted or unselected models
+    setIsModelUpdateAvailable(false);
+  }, [activePairs]);
 
   const handleUpdateAllModels = () => {
     setIsUpdatingModel(true);
@@ -1666,14 +1680,11 @@ export default function App() {
                 </div>
 
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800">
-                  <div className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-1">Developer Contact</div>
-                  <a
-                    href="mailto:sheminasalam@gmail.com?subject=[ChatNora]%20Issue%20Report"
-                    className="text-xs font-bold text-amber-300 hover:text-amber-200 transition flex items-center gap-1"
-                  >
-                    <Mail className="w-3 h-3" />
-                    <span>sheminasalam@gmail.com</span>
-                  </a>
+                  <div className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-1">Open Source License</div>
+                  <div className="text-xs font-bold text-emerald-400 flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>MIT License (Free for personal use)</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2194,113 +2205,113 @@ export default function App() {
                         return (
                           <div
                             key={msg.id}
-                            className={`flex flex-col ${msg.isMe ? 'items-end' : 'items-start'}`}
+                            className="w-full relative"
                           >
-                            {/* Message Row with Middle-Side Translation Badge - ALIGNMENT PRESERVED EXACTLY AS DESIGNED */}
-                            <div className={`flex items-center gap-1.5 max-w-[95%] ${msg.isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                              {/* Original WhatsApp Bubble */}
-                              <div
-                                className={`rounded-lg px-3 py-1.5 text-xs shadow-sm relative ${
-                                  msg.isMe
-                                    ? 'bg-[#005c4b] text-slate-100 rounded-tr-none'
-                                    : 'bg-[#202c33] text-slate-100 rounded-tl-none'
-                                }`}
-                              >
-                                <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
-                                <div className="text-[9px] text-slate-400 text-right mt-0.5">{msg.time}</div>
+                            <div className="flex items-start gap-2 w-full">
+                              {/* Neatly aligned translation icons column on the left side of the screen */}
+                              <div className="w-10 shrink-0 flex items-center justify-start pt-1">
+                                {overlayEnabled && msg.translated && isPackActive && !isExpanded && !isOtherExpanded && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setExpandedMsgId(msg.id);
+                                    }}
+                                    className="flex items-center gap-1 px-1.5 py-0.5 rounded-[8px] border shadow-sm transition hover:scale-105 active:scale-95 shrink-0 cursor-pointer bg-[#1F2C34] border-[#2A3942] text-[#8696A0] hover:text-[#25D366] hover:border-[#144635]"
+                                    title={`Click to view ${bubbleTitle}`}
+                                  >
+                                    <Languages className="w-2.5 h-2.5" />
+                                    <span className="text-[9px] font-bold">
+                                      {dynamicBadge}
+                                    </span>
+                                  </button>
+                                )}
                               </div>
 
-                              {/* Collapsed State: Middle-side badge away from outer screen edge */}
-                              {overlayEnabled && msg.translated && isPackActive && !isExpanded && !isOtherExpanded && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setExpandedMsgId(msg.id);
-                                  }}
-                                  className={`flex items-center gap-1 px-1.5 py-0.5 rounded-[8px] border shadow-sm transition hover:scale-105 active:scale-95 shrink-0 cursor-pointer ${
-                                    msg.isMe
-                                      ? 'bg-[#0B2B20] border-[#144635] text-[#25D366]'
-                                      : 'bg-[#1F2C34] border-[#2A3942] text-[#8696A0]'
-                                  }`}
-                                  title={`Click to view ${bubbleTitle}`}
-                                >
-                                  <Languages className="w-2.5 h-2.5" />
-                                  <span className="text-[9px] font-bold">
-                                    {dynamicBadge}
-                                  </span>
-                                </button>
-                              )}
-                            </div>
-
-                            {/* Expanded State: Chat Bubble matching WhatsApp shape & width WITH VERTICAL SCROLLING */}
-                            {overlayEnabled && msg.translated && isExpanded && (
-                              <div
-                                onClick={(e) => e.stopPropagation()}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                className={`mt-1 max-w-[92%] sm:max-w-[88%] animate-fadeIn ${msg.isMe ? 'self-end' : 'self-start'}`}
-                              >
+                              {/* Message and Translation Bubble Container */}
+                              <div className={`flex-1 flex flex-col ${msg.isMe ? 'items-end' : 'items-start'}`}>
+                                {/* Original WhatsApp Bubble */}
                                 <div
-                                  onClick={(e) => e.stopPropagation()}
-                                  onMouseDown={(e) => e.stopPropagation()}
-                                  className={`rounded-[14px] px-3.5 py-2 border shadow-2xl transition relative ${
+                                  className={`rounded-lg px-3 py-1.5 text-xs shadow-sm relative max-w-[88%] ${
                                     msg.isMe
-                                      ? 'bg-[#0B2B20] border-[#144635]'
-                                      : 'bg-[#202c33] border-[#2A3942]'
+                                      ? 'bg-[#005c4b] text-slate-100 rounded-tr-none'
+                                      : 'bg-[#202c33] text-slate-100 rounded-tl-none'
                                   }`}
                                 >
-                                  {/* Header Bar with Language, Scroll Hint and Close Button */}
-                                  <div
-                                    onClick={() => setExpandedMsgId(null)}
-                                    className="flex items-center justify-between pb-1.5 mb-1 border-b border-slate-700/60 cursor-pointer select-none"
-                                    title="Click header or close icon to collapse"
-                                  >
-                                    <span
-                                      className={`text-[11px] tracking-wide font-semibold ${
-                                        msg.isMe ? 'text-[#25D366]' : 'text-[#8696A0]'
-                                      }`}
-                                    >
-                                      {bubbleTitle}
-                                    </span>
-                                    <div className="flex items-center gap-1.5">
-                                      {msg.translated.length > 180 && (
-                                        <span className="text-[9px] bg-slate-800/90 text-slate-300 px-1.5 py-0.5 rounded font-mono flex items-center gap-0.5">
-                                          ↕ Scrollable
-                                        </span>
-                                      )}
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setExpandedMsgId(null);
-                                        }}
-                                        className="text-slate-400 hover:text-white p-0.5 rounded transition cursor-pointer"
-                                        title="Close translation"
-                                      >
-                                        <X className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                  </div>
+                                  <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                                  <div className="text-[9px] text-slate-400 text-right mt-0.5">{msg.time}</div>
+                                </div>
 
-                                  {/* Scrollable Translation Container - Long text never cropped */}
+                                {/* Expanded State: Chat Bubble matching WhatsApp shape & generous width WITH VERTICAL SCROLLING */}
+                                {overlayEnabled && msg.translated && isExpanded && (
                                   <div
                                     onClick={(e) => e.stopPropagation()}
-                                    className="max-h-56 overflow-y-auto pr-1.5 my-1 select-text overscroll-contain"
-                                    style={{ scrollbarWidth: 'thin', scrollbarColor: '#475569 transparent' }}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    className={`mt-1.5 w-full max-w-[94%] sm:max-w-[88%] animate-fadeIn ${msg.isMe ? 'self-end' : 'self-start'}`}
                                   >
-                                    <p className="text-[13px] text-[#E9EDEF] font-normal leading-relaxed whitespace-pre-wrap">
-                                      {msg.translated}
-                                    </p>
-                                  </div>
+                                    <div
+                                      onClick={(e) => e.stopPropagation()}
+                                      onMouseDown={(e) => e.stopPropagation()}
+                                      className={`rounded-[14px] px-3.5 py-2.5 border shadow-2xl transition relative ${
+                                        msg.isMe
+                                          ? 'bg-[#0B2B20] border-[#144635]'
+                                          : 'bg-[#202c33] border-[#2A3942]'
+                                      }`}
+                                    >
+                                      {/* Header Bar with Language, Scroll Hint and Close Button */}
+                                      <div
+                                        onClick={() => setExpandedMsgId(null)}
+                                        className="flex items-center justify-between pb-1.5 mb-1 border-b border-slate-700/60 cursor-pointer select-none"
+                                        title="Click header or close icon to collapse"
+                                      >
+                                        <span
+                                          className={`text-[11px] tracking-wide font-semibold ${
+                                            msg.isMe ? 'text-[#25D366]' : 'text-[#8696A0]'
+                                          }`}
+                                        >
+                                          {bubbleTitle}
+                                        </span>
+                                        <div className="flex items-center gap-1.5">
+                                          {msg.translated.length > 180 && (
+                                            <span className="text-[9px] bg-slate-800/90 text-slate-300 px-1.5 py-0.5 rounded font-mono flex items-center gap-0.5">
+                                              ↕ Scrollable
+                                            </span>
+                                          )}
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setExpandedMsgId(null);
+                                            }}
+                                            className="text-slate-400 hover:text-white p-0.5 rounded transition cursor-pointer"
+                                            title="Close translation"
+                                          >
+                                            <X className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      </div>
 
-                                  {/* Footer hint */}
-                                  <div
-                                    onClick={() => setExpandedMsgId(null)}
-                                    className="text-[8.5px] text-slate-500 font-mono text-right pt-0.5 cursor-pointer hover:text-slate-400 select-none"
-                                  >
-                                    Click backdrop or close icon to dismiss
+                                      {/* Scrollable Translation Container - Long text never cropped */}
+                                      <div
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="max-h-56 overflow-y-auto pr-1.5 my-1 select-text overscroll-contain"
+                                        style={{ scrollbarWidth: 'thin', scrollbarColor: '#475569 transparent' }}
+                                      >
+                                        <p className="text-[13px] text-[#E9EDEF] font-normal leading-relaxed whitespace-pre-wrap">
+                                          {msg.translated}
+                                        </p>
+                                      </div>
+
+                                      {/* Footer hint */}
+                                      <div
+                                        onClick={() => setExpandedMsgId(null)}
+                                        className="text-[8.5px] text-slate-500 font-mono text-right pt-0.5 cursor-pointer hover:text-slate-400 select-none"
+                                      >
+                                        Click backdrop or close icon to dismiss
+                                      </div>
+                                    </div>
                                   </div>
-                                </div>
+                                )}
                               </div>
-                            )}
+                            </div>
                           </div>
                         );
                       })}
@@ -3317,9 +3328,9 @@ export default function App() {
         <div className="flex items-center space-x-4">
           <button
             onClick={() => setShowRepoContactModal(true)}
-            className="text-amber-300 hover:text-amber-200 transition flex items-center gap-1 font-medium cursor-pointer"
+            className="text-emerald-400 hover:text-emerald-300 transition flex items-center gap-1 font-medium cursor-pointer"
           >
-            <Mail className="w-3.5 h-3.5" /> Contact Developer
+            <Github className="w-3.5 h-3.5" /> Repository Details
           </button>
           <span className="flex items-center gap-1 text-emerald-400">
             <ShieldCheck className="w-3.5 h-3.5" /> 100% On-Device ML Kit Privacy
@@ -3329,7 +3340,7 @@ export default function App() {
         </div>
       </footer>
 
-      {/* Repository Contact & Issues Modal */}
+      {/* Repository Details & Issues Modal */}
       {showRepoContactModal && (
         <div
           onClick={() => setShowRepoContactModal(false)}
@@ -3346,12 +3357,12 @@ export default function App() {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    Repository &amp; Issue Updates
+                    Repository Details &amp; Issues
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-semibold">
-                      Active
+                      Open Source
                     </span>
                   </h3>
-                  <p className="text-xs text-slate-400">Official project tracking, bugs, and developer contact</p>
+                  <p className="text-xs text-slate-400">Official project tracking, source repository, and issue updates</p>
                 </div>
               </div>
               <button
@@ -3411,28 +3422,6 @@ export default function App() {
                     <Bug className="w-3 h-3" /> New Issue
                   </a>
                 </div>
-
-                <div className="pt-2 border-t border-slate-900 flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-xs text-slate-400 font-medium">Maintainer / Developer Email</div>
-                    <a
-                      href="mailto:sheminasalam@gmail.com?subject=[ChatNora]%20Issue%20Report"
-                      className="text-xs font-semibold text-amber-300 hover:text-amber-200 transition flex items-center gap-1.5 mt-0.5"
-                    >
-                      <Mail className="w-3.5 h-3.5" />
-                      <span>sheminasalam@gmail.com</span>
-                    </a>
-                  </div>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText('sheminasalam@gmail.com');
-                      showToast('Email address copied to clipboard!');
-                    }}
-                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition flex items-center gap-1 cursor-pointer shrink-0"
-                  >
-                    <Copy className="w-3 h-3" /> Copy
-                  </button>
-                </div>
               </div>
 
               {/* Quick Issue Reporter Form */}
@@ -3472,20 +3461,13 @@ export default function App() {
 
                 <div className="flex items-center gap-2">
                   <a
-                    href={`mailto:sheminasalam@gmail.com?subject=[ChatNora%20Feedback%20-%20${repoFeedbackType}]&body=${encodeURIComponent(repoFeedbackText || 'Issue details...')}`}
-                    className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs text-center transition flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <Mail className="w-3.5 h-3.5" />
-                    <span>Send via Email</span>
-                  </a>
-                  <a
                     href={`https://github.com/sheminasalam/ChatNora/issues/new?title=[${repoFeedbackType}]%20Issue%20Report&body=${encodeURIComponent(repoFeedbackText || 'Please describe your issue here...')}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs text-center border border-slate-700 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs text-center transition flex items-center justify-center gap-2 cursor-pointer shadow-lg"
                   >
-                    <Github className="w-3.5 h-3.5 text-white" />
-                    <span>Open on GitHub</span>
+                    <Github className="w-4 h-4 text-white" />
+                    <span>Submit Issue on GitHub</span>
                   </a>
                 </div>
               </div>

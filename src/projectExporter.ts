@@ -1215,7 +1215,7 @@ dependencies {
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:text="Contact: sheminasalam@gmail.com"
+                        android:text="Open-source project on GitHub"
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp" />
                 </LinearLayout>
@@ -1239,12 +1239,12 @@ dependencies {
                         android:textColor="#FFFFFF" />
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnContactDevEmail"
+                        android:id="@+id/btnOpenGitHubRepo"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:layout_marginStart="6dp"
-                        android:text="Email Dev"
+                        android:text="GitHub Repo"
                         android:textSize="12sp"
                         style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                         android:textColor="@color/primary"
@@ -1730,11 +1730,11 @@ class AppPreferences(context: Context) {
     }
 
     var isModelUpdateAvailable: Boolean
-        get() = prefs.getBoolean(KEY_MODEL_UPDATE_AVAILABLE, true)
+        get() = prefs.getBoolean(KEY_MODEL_UPDATE_AVAILABLE, false)
         set(value) = prefs.edit().putBoolean(KEY_MODEL_UPDATE_AVAILABLE, value).apply()
 
     var modelVersion: String
-        get() = prefs.getString(KEY_MODEL_VERSION, "v2.3") ?: "v2.3"
+        get() = prefs.getString(KEY_MODEL_VERSION, "v2.4") ?: "v2.4"
         set(value) = prefs.edit().putString(KEY_MODEL_VERSION, value).apply()
 }
 `,
@@ -2398,23 +2398,44 @@ object TranslationEngine {
 
     /**
      * Purges downloaded ML Kit models that are no longer part of the user's active language pairs.
+     * Deletes any local language packs other than in the active language pair so they are never suggested for update.
      */
-    fun purgeInactiveModels(activeSourceCodes: Set<String>, onComplete: (() -> Unit)? = null) {
-        val activeMlKitCodes = activeSourceCodes.map { SupportedLanguages.findByCode(it).mlKitCode }.toSet()
+    fun purgeInactiveModels(
+        activeSourceCodes: Set<String>,
+        targetCode: String = currentTargetLang,
+        onComplete: ((Int) -> Unit)? = null
+    ) {
+        val allowedMlKitCodes = mutableSetOf<String>()
+        for (code in activeSourceCodes) {
+            try {
+                allowedMlKitCodes.add(SupportedLanguages.findByCode(code).mlKitCode)
+            } catch (e: Exception) {
+                allowedMlKitCodes.add(code)
+            }
+        }
+        try {
+            allowedMlKitCodes.add(SupportedLanguages.findByCode(targetCode).mlKitCode)
+        } catch (e: Exception) {
+            allowedMlKitCodes.add(targetCode)
+        }
+
         val modelManager = RemoteModelManager.getInstance()
         modelManager.getDownloadedModels(TranslateRemoteModel::class.java)
             .addOnSuccessListener { models ->
+                var deletedCount = 0
                 for (model in models) {
-                    if (model.language !in activeMlKitCodes) {
+                    if (model.language !in allowedMlKitCodes) {
                         Log.i(TAG, "Deleting orphaned language model from storage: \${model.language}")
                         activeTranslators.remove(model.language)?.close()
                         modelManager.deleteDownloadedModel(model)
+                        deletedCount++
                     }
                 }
-                onComplete?.invoke()
+                Log.i(TAG, "Cleaned \$deletedCount inactive language models from storage.")
+                onComplete?.invoke(deletedCount)
             }
             .addOnFailureListener {
-                onComplete?.invoke()
+                onComplete?.invoke(0)
             }
     }
 
@@ -3044,19 +3065,14 @@ class OverlayController(
         var posY = candidateY
         val minGap = (6 * density).toInt()
 
-        // Collect all other active badge vertical intervals on the same outgoing/incoming side
+        // Collect all other active badge vertical intervals along the left side of the screen
         val occupiedIntervals = mutableListOf<Pair<Int, Int>>()
         for ((key, other) in activeOverlays) {
             if (key == currentKey) continue
             if (key == expandedDisplayKey) continue
             val otherRect = other.overlayScreenRect
             if (otherRect.isEmpty) continue
-
-            val otherScreenW = other.lastScreenBounds.width()
-            val otherIsOutgoing = other.currentBounds.right > otherScreenW * 0.78f || other.currentBounds.left > otherScreenW * 0.40f
-            if (otherIsOutgoing == isOutgoing) {
-                occupiedIntervals.add(Pair(otherRect.top - minGap, otherRect.bottom + minGap))
-            }
+            occupiedIntervals.add(Pair(otherRect.top - minGap, otherRect.bottom + minGap))
         }
 
         // Iteratively resolve any vertical overlap until posY is completely clear
@@ -3173,7 +3189,7 @@ class OverlayController(
             llExpanded.visibility = if (isExpanded) View.VISIBLE else View.GONE
 
             val maxAllowedWidth = (screenW - (marginPx * 2)).coerceAtLeast(minExpandedWidthPx)
-            val bubbleWidth = targetBounds.width().coerceIn(minExpandedWidthPx, maxAllowedWidth)
+            val bubbleWidth = (screenW * 0.85f).toInt().coerceIn((260 * density).toInt(), maxAllowedWidth)
 
             val measuredWidth: Int
             val measuredHeight: Int
@@ -3209,7 +3225,7 @@ class OverlayController(
                 measuredWidth = bubbleWidth
                 measuredHeight = overlayView.measuredHeight
 
-                var calculatedX = if (isOutgoing) targetBounds.right - measuredWidth else targetBounds.left
+                var calculatedX = if (isOutgoing) screenW - bubbleWidth - marginPx else marginPx
                 if (calculatedX + measuredWidth > screenW - marginPx) calculatedX = screenW - measuredWidth - marginPx
                 if (calculatedX < marginPx) calculatedX = marginPx
                 posX = calculatedX
@@ -3221,7 +3237,7 @@ class OverlayController(
                     (targetBounds.top - measuredHeight - gapPx).coerceAtLeast(statusBarInsetPx)
                 }
             } else {
-                // Collapsed State: Icon badge placed at the middle of the side away from the outer edge of screen!
+                // Collapsed State: All translation icons arranged neatly on the left side of the screen!
                 overlayView.measure(
                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
@@ -3229,18 +3245,9 @@ class OverlayController(
                 measuredWidth = overlayView.measuredWidth
                 measuredHeight = overlayView.measuredHeight
 
-                var calculatedX = if (isOutgoing) {
-                    // Outgoing bubble on right -> place icon on LEFT side of bubble
-                    targetBounds.left - measuredWidth - badgeGapPx
-                } else {
-                    // Incoming bubble on left -> place icon on RIGHT side of bubble
-                    targetBounds.right + badgeGapPx
-                }
-                if (calculatedX + measuredWidth > screenW - marginPx) calculatedX = screenW - measuredWidth - marginPx
-                if (calculatedX < marginPx) calculatedX = marginPx
-                posX = calculatedX
+                posX = marginPx
 
-                // Middle of the side of the bubble vertically with collision avoidance
+                // Middle of the bubble vertically with collision avoidance along the left side
                 val candidateY = targetBounds.centerY() - (measuredHeight / 2)
                 posY = adjustBadgeYToAvoidCollisions(
                     candidateY = candidateY,
@@ -3384,7 +3391,7 @@ class OverlayController(
         val isOutgoing = active.currentBounds.right > screenW * 0.78f || active.currentBounds.left > screenW * 0.40f
 
         val maxAllowedWidth = (screenW - (marginPx * 2)).coerceAtLeast(minExpandedWidthPx)
-        val bubbleWidth = active.currentBounds.width().coerceIn(minExpandedWidthPx, maxAllowedWidth)
+        val bubbleWidth = (screenW * 0.85f).toInt().coerceIn((260 * density).toInt(), maxAllowedWidth)
 
         val bottomLimit = if (active.lastInputBarTop != null && active.lastInputBarTop!! > statusBarInsetPx + (100 * density).toInt()) {
             active.lastInputBarTop!! - (4 * density).toInt()
@@ -3423,7 +3430,7 @@ class OverlayController(
             measuredWidth = bubbleWidth
             measuredHeight = active.view.measuredHeight
 
-            var calculatedX = if (isOutgoing) active.currentBounds.right - measuredWidth else active.currentBounds.left
+            var calculatedX = if (isOutgoing) screenW - bubbleWidth - marginPx else marginPx
             if (calculatedX + measuredWidth > screenW - marginPx) calculatedX = screenW - measuredWidth - marginPx
             if (calculatedX < marginPx) calculatedX = marginPx
             posX = calculatedX
@@ -3435,7 +3442,7 @@ class OverlayController(
             }
             active.view.elevation = 24 * density
         } else {
-            // Collapsed: middle of the side away from outer edge of screen
+            // Collapsed: All translation icons arranged neatly on the left side of the screen
             active.view.measure(
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
@@ -3443,14 +3450,7 @@ class OverlayController(
             measuredWidth = active.view.measuredWidth
             measuredHeight = active.view.measuredHeight
 
-            var calculatedX = if (isOutgoing) {
-                active.currentBounds.left - measuredWidth - badgeGapPx
-            } else {
-                active.currentBounds.right + badgeGapPx
-            }
-            if (calculatedX + measuredWidth > screenW - marginPx) calculatedX = screenW - measuredWidth - marginPx
-            if (calculatedX < marginPx) calculatedX = marginPx
-            posX = calculatedX
+            posX = marginPx
 
             val candidateY = active.currentBounds.centerY() - (measuredHeight / 2)
             posY = adjustBadgeYToAvoidCollisions(
@@ -4650,7 +4650,10 @@ class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceCh
         updateAccessibilityStatus()
         checkNotificationListenerStatus()
         TranslationEngine.checkModelAvailability()
-        TranslationEngine.purgeInactiveModels(appPreferences.activeSourceLanguages)
+        TranslationEngine.purgeInactiveModels(
+            activeSourceCodes = appPreferences.activeSourceLanguages,
+            targetCode = appPreferences.targetLanguageCode
+        )
         updateModelUpdateBannerUI()
 
         // Sync feature switches
@@ -5028,16 +5031,12 @@ class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceCh
             }
         }
 
-        binding.btnContactDevEmail.setOnClickListener {
+        binding.btnOpenGitHubRepo.setOnClickListener {
             try {
-                val intent = Intent(Intent.ACTION_SENDTO).apply {
-                    data = Uri.parse("mailto:sheminasalam@gmail.com")
-                    putExtra(Intent.EXTRA_SUBJECT, "[ChatNora] Bug Report & Issue Feedback")
-                    putExtra(Intent.EXTRA_TEXT, "Hello ChatNora Team,\\n\\nI would like to report an issue / request a feature:\\n\\nDevice: \${Build.MANUFACTURER} \${Build.MODEL} (Android \${Build.VERSION.RELEASE})\\nApp Version: 2.0.0\\n\\nDetails:\\n")
-                }
-                startActivity(Intent.createChooser(intent, "Contact Developer"))
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/sheminasalam/ChatNora"))
+                startActivity(intent)
             } catch (e: Exception) {
-                Toast.makeText(this, "Email: sheminasalam@gmail.com", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "GitHub Repository: github.com/sheminasalam/ChatNora", Toast.LENGTH_LONG).show()
             }
         }
 

@@ -87,7 +87,10 @@ class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceCh
         updateAccessibilityStatus()
         checkNotificationListenerStatus()
         TranslationEngine.checkModelAvailability()
-        TranslationEngine.purgeInactiveModels(appPreferences.activeSourceLanguages)
+        TranslationEngine.purgeInactiveModels(
+            activeSourceCodes = appPreferences.activeSourceLanguages,
+            targetCode = appPreferences.targetLanguageCode
+        )
         updateModelUpdateBannerUI()
 
         // Sync feature switches
@@ -465,16 +468,12 @@ class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceCh
             }
         }
 
-        binding.btnContactDevEmail.setOnClickListener {
+        binding.btnOpenGitHubRepo.setOnClickListener {
             try {
-                val intent = Intent(Intent.ACTION_SENDTO).apply {
-                    data = Uri.parse("mailto:sheminasalam@gmail.com")
-                    putExtra(Intent.EXTRA_SUBJECT, "[ChatNora] Bug Report & Issue Feedback")
-                    putExtra(Intent.EXTRA_TEXT, "Hello ChatNora Team,\n\nI would like to report an issue / request a feature:\n\nDevice: ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})\nApp Version: 2.0.0\n\nDetails:\n")
-                }
-                startActivity(Intent.createChooser(intent, "Contact Developer"))
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/sheminasalam/ChatNora"))
+                startActivity(intent)
             } catch (e: Exception) {
-                Toast.makeText(this, "Email: sheminasalam@gmail.com", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "GitHub Repository: github.com/sheminasalam/ChatNora", Toast.LENGTH_LONG).show()
             }
         }
 

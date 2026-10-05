@@ -203,10 +203,10 @@ class AppPreferences(context: Context) {
     }
 
     var isModelUpdateAvailable: Boolean
-        get() = prefs.getBoolean(KEY_MODEL_UPDATE_AVAILABLE, true)
+        get() = prefs.getBoolean(KEY_MODEL_UPDATE_AVAILABLE, false)
         set(value) = prefs.edit().putBoolean(KEY_MODEL_UPDATE_AVAILABLE, value).apply()
 
     var modelVersion: String
-        get() = prefs.getString(KEY_MODEL_VERSION, "v2.3") ?: "v2.3"
+        get() = prefs.getString(KEY_MODEL_VERSION, "v2.4") ?: "v2.4"
         set(value) = prefs.edit().putString(KEY_MODEL_VERSION, value).apply()
 }

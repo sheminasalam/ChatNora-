@@ -182,23 +182,44 @@ object TranslationEngine {
 
     /**
      * Purges downloaded ML Kit models that are no longer part of the user's active language pairs.
+     * Deletes any local language packs other than in the active language pair so they are never suggested for update.
      */
-    fun purgeInactiveModels(activeSourceCodes: Set<String>, onComplete: (() -> Unit)? = null) {
-        val activeMlKitCodes = activeSourceCodes.map { SupportedLanguages.findByCode(it).mlKitCode }.toSet()
+    fun purgeInactiveModels(
+        activeSourceCodes: Set<String>,
+        targetCode: String = currentTargetLang,
+        onComplete: ((Int) -> Unit)? = null
+    ) {
+        val allowedMlKitCodes = mutableSetOf<String>()
+        for (code in activeSourceCodes) {
+            try {
+                allowedMlKitCodes.add(SupportedLanguages.findByCode(code).mlKitCode)
+            } catch (e: Exception) {
+                allowedMlKitCodes.add(code)
+            }
+        }
+        try {
+            allowedMlKitCodes.add(SupportedLanguages.findByCode(targetCode).mlKitCode)
+        } catch (e: Exception) {
+            allowedMlKitCodes.add(targetCode)
+        }
+
         val modelManager = RemoteModelManager.getInstance()
         modelManager.getDownloadedModels(TranslateRemoteModel::class.java)
             .addOnSuccessListener { models ->
+                var deletedCount = 0
                 for (model in models) {
-                    if (model.language !in activeMlKitCodes) {
+                    if (model.language !in allowedMlKitCodes) {
                         Log.i(TAG, "Deleting orphaned language model from storage: ${model.language}")
                         activeTranslators.remove(model.language)?.close()
                         modelManager.deleteDownloadedModel(model)
+                        deletedCount++
                     }
                 }
-                onComplete?.invoke()
+                Log.i(TAG, "Cleaned $deletedCount inactive language models from storage.")
+                onComplete?.invoke(deletedCount)
             }
             .addOnFailureListener {
-                onComplete?.invoke()
+                onComplete?.invoke(0)
             }
     }
 
