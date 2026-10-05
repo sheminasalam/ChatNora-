@@ -18,6 +18,8 @@ data class ScanResult(
 /**
  * High-performance WhatsApp message scanner supporting multiple simultaneous active language packs (up to 3)
  * with on-the-fly detection of new foreign languages in chats.
+ * Engineered to accurately map individual message bubble boundaries even during floating Picture-in-Picture (PiP)
+ * video calls without collapsing or stacking badges over one another.
  */
 class WhatsAppMessageScanner(
     private val activeSourceLanguages: Set<String> = setOf("bn"),
@@ -42,7 +44,8 @@ class WhatsAppMessageScanner(
             "online", "typing...", "recording audio...", "last seen", "swipe to reply"
         )
         private val ACTION_BUTTONS = setOf(
-            "call", "pay", "search", "attach", "send", "voice message", "back", "more options"
+            "call", "pay", "search", "attach", "send", "voice message", "back", "more options",
+            "end call", "mute", "video on", "video off", "switch camera", "whatsapp call"
         )
     }
 
@@ -76,6 +79,8 @@ class WhatsAppMessageScanner(
         val pBounds = Rect()
         var visitedNodesCount = 0
         val maxNodesToTraverse = 600
+
+        val maxAllowedBubbleWidth = (screenBounds.width() * 0.88f).toInt()
 
         try {
             while (!queue.isEmpty() && visitedNodesCount < maxNodesToTraverse && results.size < 50) {
@@ -140,16 +145,27 @@ class WhatsAppMessageScanner(
                                     if (matchedLang != null) {
                                         val bubbleBounds = Rect(tempBounds)
 
+                                        // Strict parent traversal: never allow parent expansion to capture
+                                        // the entire chat container or RecyclerView (which causes all icons to stack
+                                        // at the same centerY during video calls / PiP mode!)
+                                        val maxAllowedBubbleHeight = tempBounds.height() + (screenBounds.height() * 0.15f).toInt().coerceAtMost(160)
+
                                         var currentParent: AccessibilityNodeInfo? = node.parent
                                         var depth = 0
                                         try {
                                             while (currentParent != null && depth < 3) {
                                                 currentParent.getBoundsInScreen(pBounds)
-                                                if (pBounds.width() in (tempBounds.width() + 4)..screenBounds.width() &&
-                                                    pBounds.height() >= tempBounds.height() &&
-                                                    pBounds.height() <= (screenBounds.height() * 0.75f).toInt()
+                                                val pWidth = pBounds.width()
+                                                val pHeight = pBounds.height()
+
+                                                if (pWidth in (tempBounds.width() + 4)..maxAllowedBubbleWidth &&
+                                                    pHeight >= tempBounds.height() &&
+                                                    pHeight <= maxAllowedBubbleHeight
                                                 ) {
                                                     bubbleBounds.set(pBounds)
+                                                } else if (pWidth > maxAllowedBubbleWidth || pHeight > maxAllowedBubbleHeight) {
+                                                    // Reached parent container / RecyclerView - STOP immediately!
+                                                    break
                                                 }
                                                 val nextParent = currentParent.parent
                                                 if (currentParent != node) currentParent.recycle()
@@ -163,13 +179,14 @@ class WhatsAppMessageScanner(
 
                                         val isOutgoing = bubbleBounds.right > screenBounds.width() * 0.78f || bubbleBounds.left > screenBounds.width() * 0.40f
                                         val isIncoming = !isOutgoing
-                                        val yBucket = bubbleBounds.top / 80
-                                        val displayKey = "msg_${sessionGeneration}_${normalized.hashCode()}_${if (isIncoming) "in" else "out"}_b$yBucket"
+                                        // Stable key using occurrence count: maintains overlay identity when chat scrolls smoothly
+                                        val occurrenceIndex = results.count { it.normalizedText == normalized }
+                                        val displayKey = "msg_${sessionGeneration}_${normalized.hashCode()}_${if (isIncoming) "in" else "out"}_occ$occurrenceIndex"
 
                                         val isDuplicate = results.any { existing ->
                                             existing.normalizedText == normalized &&
-                                                    Math.abs(existing.bounds.top - bubbleBounds.top) < 40 &&
-                                                    Math.abs(existing.bounds.left - bubbleBounds.left) < 60
+                                                    Math.abs(existing.bounds.top - bubbleBounds.top) < 24 &&
+                                                    Math.abs(existing.bounds.left - bubbleBounds.left) < 40
                                         }
 
                                         if (!isDuplicate) {
@@ -256,11 +273,23 @@ class WhatsAppMessageScanner(
         if (SYSTEM_NOTICE_PATTERNS.any { lower.contains(it) }) return true
 
         val resId = node.viewIdResourceName?.lowercase() ?: ""
+        val clsName = node.className?.toString()?.lowercase() ?: ""
         if (resId.contains("conversation_contact_name") ||
             resId.contains("conversation_title") ||
             resId.contains("toolbar") ||
             resId.contains("action_bar") ||
-            resId.contains("tab_title")
+            resId.contains("tab_title") ||
+            resId.contains("pip") ||
+            resId.contains("call") ||
+            resId.contains("video_container") ||
+            resId.contains("voip") ||
+            resId.contains("floating") ||
+            resId.contains("call_avatar") ||
+            resId.contains("mini_call") ||
+            clsName.contains("surfaceview") ||
+            clsName.contains("textureview") ||
+            clsName.contains("pip") ||
+            clsName.contains("voip")
         ) {
             return true
         }

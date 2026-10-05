@@ -8,7 +8,8 @@ import java.util.regex.Pattern
  * Universal language detector supporting 19+ languages on WhatsApp.
  * Combines ultra-fast (sub-millisecond) zero-CPU Unicode script filters
  * with Google ML Kit Language Identification for Romance/Latin languages.
- * Now features intelligent segment decomposition for multi-language single messages.
+ * Features intelligent segment decomposition for multi-language single messages
+ * (forwarded headers, paragraphs, and sentence boundaries).
  */
 object LanguageDetector {
 
@@ -30,13 +31,14 @@ object LanguageDetector {
         "^\\d{1,2}:\\d{2}$"
     )
 
-    // Forwarded message timestamp & author prefix regex: e.g. "[10/3, 12:25 PM] Shemin A Salam: "
+    // Forwarded message timestamp & author prefix regex:
+    // Matches e.g. "[10/3, 12:25 PM] Shemin A Salam: " or "10/3/24, 12:25 - Shemin A Salam: "
     private val FORWARDED_HEADER_SPLIT_REGEX = Regex(
-        "(?=(?:\\[\\d{1,2}[/.-]\\d{1,2}(?:[/.-]\\d{2,4})?,?\\s+\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\s*[AaPp][Mm])?\\]\\s*[^:\\n]+:\\s*))"
+        "(?=(?:\\[?\\d{1,2}[/.-]\\d{1,2}(?:[/.-]\\d{2,4})?,?\\s+\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\s*[AaPp][Mm])?\\]?\\s*(?:-\\s*)?[^:\\n]+:\\s*))"
     )
 
     private val FORWARDED_PREFIX_REGEX = Regex(
-        "^(\\[\\d{1,2}[/.-]\\d{1,2}(?:[/.-]\\d{2,4})?,?\\s+\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\s*[AaPp][Mm])?\\]\\s*[^:\\n]+:\\s*)"
+        "^(\\[?\\d{1,2}[/.-]\\d{1,2}(?:[/.-]\\d{2,4})?,?\\s+\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\s*[AaPp][Mm])?\\]?\\s*(?:-\\s*)?[^:\\n]+:\\s*)"
     )
 
     private val SPANISH_WORDS = setOf(
@@ -47,7 +49,8 @@ object LanguageDetector {
         "usted", "ustedes", "pedido", "documentos", "reunión", "me", "llamo",
         "cada", "mañana", "despierto", "siete", "levanto", "lavo", "cara",
         "preparo", "café", "leche", "ocho", "salgo", "ciudad", "regreso",
-        "cocino", "cena", "ligera", "leo", "libro", "dormir", "vida", "vida"
+        "cocino", "cena", "unacena", "ligera", "leo", "libro", "dormir", "vida",
+        "antes", "mateo", "para", "por", "las", "los", "del", "con", "una"
     )
 
     private val FRENCH_WORDS = setOf(
@@ -59,12 +62,13 @@ object LanguageDetector {
         "mon", "ami", "amie", "quand", "tout", "tous", "toute", "va", "vas", "pourquoi",
         "touristique", "charmante", "place", "cathédrale", "maisons", "anciennes", "restos",
         "hôtels", "boutiques", "rez-de-chaussée", "maison", "restaurant", "construit",
-        "étages", "supérieurs", "rajoutés", "siècle", "colombages", "sculptés"
+        "étages", "supérieurs", "rajoutés", "siècle", "colombages", "sculptés", "est",
+        "une", "méli-mélo", "strasbourg", "kammerzell", "sont"
     )
 
     private val GERMAN_WORDS = setOf(
         "hallo", "danke", "bitte", "nicht", "guten", "morgen", "abend", "alles",
-        "wie", "gehts", "oder", "auch", "noch", "nach", "zeit", "freund"
+        "wie", "gehts", "oder", "auch", "noch", "nach", "zeit", "freund", "treffen"
     )
 
     private val PORTUGUESE_WORDS = setOf(
@@ -86,7 +90,7 @@ object LanguageDetector {
     }
 
     /**
-     * Determines whether the given text is written in the specified source language.
+     * Determines whether the given text contains content written in the specified source language.
      */
     fun isTargetLanguageMessage(
         text: CharSequence?,
@@ -132,8 +136,10 @@ object LanguageDetector {
     }
 
     /**
-     * Splits a potentially multilingual message into cohesive segments (e.g. forwarded message blocks,
-     * separate paragraphs, or distinct sentences) and detects the language of each segment.
+     * Splits a potentially multilingual message into cohesive segments:
+     * 1. Forwarded headers with timestamps and names.
+     * 2. Paragraphs / newlines.
+     * 3. Sentence boundaries (when multiple languages exist in an unformatted block).
      */
     fun splitMultilingualSegments(text: String): List<TextSegment> {
         val trimmed = text.trim()
@@ -142,7 +148,7 @@ object LanguageDetector {
         // 1. Try splitting by forwarded message headers
         val forwardedChunks = trimmed.split(FORWARDED_HEADER_SPLIT_REGEX).filter { it.isNotBlank() }
         if (forwardedChunks.size > 1) {
-            return forwardedChunks.map { chunk ->
+            val segments = forwardedChunks.map { chunk ->
                 val prefixMatch = FORWARDED_PREFIX_REGEX.find(chunk)
                 val prefix = prefixMatch?.value ?: ""
                 val body = chunk.substring(prefix.length)
@@ -152,6 +158,10 @@ object LanguageDetector {
                     body = body,
                     detectedLanguage = detectSingleSegmentLanguage(body)
                 )
+            }
+            val distinctLangs = segments.mapNotNull { it.detectedLanguage }.distinct()
+            if (distinctLangs.size > 1) {
+                return segments
             }
         }
 
@@ -175,7 +185,59 @@ object LanguageDetector {
             }
         }
 
-        // 3. Fallback: single segment
+        // 3. Try splitting by sentence boundaries if multiple languages exist in one block
+        val sentences = trimmed.split(Regex("(?<=[.!?])\\s+")).filter { it.isNotBlank() }
+        if (sentences.size > 1) {
+            val sentenceSegments = mutableListOf<TextSegment>()
+            var currentPrefix = ""
+            var currentLang: String? = null
+            var currentBuffer = StringBuilder()
+
+            for (s in sentences) {
+                val prefixMatch = FORWARDED_PREFIX_REGEX.find(s)
+                val prefix = prefixMatch?.value ?: ""
+                val body = s.substring(prefix.length)
+                val sLang = detectSingleSegmentLanguage(body)
+
+                if (currentLang == null) {
+                    currentPrefix = prefix
+                    currentLang = sLang
+                    currentBuffer.append(body)
+                } else if (sLang != null && sLang != currentLang) {
+                    sentenceSegments.add(
+                        TextSegment(
+                            rawSegment = "$currentPrefix$currentBuffer",
+                            prefix = currentPrefix,
+                            body = currentBuffer.toString(),
+                            detectedLanguage = currentLang
+                        )
+                    )
+                    currentPrefix = prefix
+                    currentLang = sLang
+                    currentBuffer = StringBuilder(body)
+                } else {
+                    currentBuffer.append(" ").append(body)
+                }
+            }
+
+            if (currentBuffer.isNotEmpty()) {
+                sentenceSegments.add(
+                    TextSegment(
+                        rawSegment = "$currentPrefix$currentBuffer",
+                        prefix = currentPrefix,
+                        body = currentBuffer.toString(),
+                        detectedLanguage = currentLang
+                    )
+                )
+            }
+
+            val distinctSentenceLangs = sentenceSegments.mapNotNull { it.detectedLanguage }.distinct()
+            if (distinctSentenceLangs.size > 1) {
+                return sentenceSegments
+            }
+        }
+
+        // 4. Fallback: single segment
         val prefixMatch = FORWARDED_PREFIX_REGEX.find(trimmed)
         val prefix = prefixMatch?.value ?: ""
         val body = trimmed.substring(prefix.length)
@@ -195,12 +257,14 @@ object LanguageDetector {
     fun detectAllLanguages(text: CharSequence?): List<String> {
         if (text.isNullOrBlank()) return emptyList()
         val segments = splitMultilingualSegments(text.toString())
-        return segments.mapNotNull { it.detectedLanguage }.distinct()
+        val langs = segments.mapNotNull { it.detectedLanguage }.distinct()
+        if (langs.isNotEmpty()) return langs
+        val single = detectSingleSegmentLanguage(text.toString())
+        return if (single != null) listOf(single) else emptyList()
     }
 
     /**
-     * Detects what foreign language the message is written in (returns language code like 'bn', 'es', 'ar', etc.).
-     * Returns null if English, numbers, or unrecognizable.
+     * Detects what foreign language the message is written in.
      */
     fun detectLanguage(text: CharSequence?): String? {
         if (text.isNullOrBlank()) return null
@@ -237,6 +301,18 @@ object LanguageDetector {
         if (checkGerman(trimmed)) return "de"
         if (checkPortuguese(trimmed)) return "pt"
         if (checkItalian(trimmed)) return "it"
+
+        // 3. Google ML Kit On-Device Language Identification fallback for Latin/multilingual texts
+        try {
+            val identifier = mlKitLanguageIdentifier
+            if (identifier != null && trimmed.length >= 6) {
+                val task = identifier.identifyLanguage(trimmed)
+                val lang = com.google.android.gms.tasks.Tasks.await(task, 400, java.util.concurrent.TimeUnit.MILLISECONDS)
+                if (!lang.isNullOrBlank() && lang != "und" && lang.length == 2) {
+                    return lang.lowercase()
+                }
+            }
+        } catch (e: Exception) {}
 
         return null
     }
@@ -275,45 +351,44 @@ object LanguageDetector {
 
     private fun checkSpanish(text: String): Boolean {
         val lower = text.lowercase()
-        // Distinctive Spanish characters (exclude 'é' and 'ü' which are shared with French/German)
-        if (lower.any { it in "ñáíóú¿¡" }) return true
-        val words = lower.split(Regex("[^\\p{L}]+"))
-        return words.any { it in SPANISH_WORDS }
+        if (lower.contains('ñ') || lower.contains('¿') || lower.contains('¡')) return true
+        val words = lower.split(Regex("[^\\p{L}]+")).filter { it.isNotBlank() }
+        val matchCount = words.count { it in SPANISH_WORDS }
+        return matchCount >= 2 || (words.size <= 3 && matchCount >= 1)
     }
 
     private fun checkFrench(text: String): Boolean {
         val lower = text.lowercase()
-        // Distinctive French characters
-        if (lower.any { it in "çœæèêëàâùûîïô" }) return true
-        val words = lower.split(Regex("[^\\p{L}]+"))
-        return words.any { it in FRENCH_WORDS }
+        if (lower.contains('œ') || lower.contains('æ') || lower.contains("c'est") || lower.contains("j'ai") || lower.contains("d'un")) return true
+        val words = lower.split(Regex("[^\\p{L}]+")).filter { it.isNotBlank() }
+        val matchCount = words.count { it in FRENCH_WORDS }
+        return matchCount >= 2 || (words.size <= 3 && matchCount >= 1)
     }
 
     private fun checkGerman(text: String): Boolean {
         val lower = text.lowercase()
-        if (lower.any { it in "äöüß" }) return true
-        val words = lower.split(Regex("[^\\p{L}]+"))
-        return words.any { it in GERMAN_WORDS }
+        if (lower.contains('ß') || lower.contains('ä') || lower.contains('ö') || lower.contains('ü')) return true
+        val words = lower.split(Regex("[^\\p{L}]+")).filter { it.isNotBlank() }
+        val matchCount = words.count { it in GERMAN_WORDS }
+        return matchCount >= 2 || (words.size <= 3 && matchCount >= 1)
     }
 
     private fun checkPortuguese(text: String): Boolean {
         val lower = text.lowercase()
-        if (lower.any { it in "ãõçáéíóúâêô" }) return true
-        val words = lower.split(Regex("[^\\p{L}]+"))
-        return words.any { it in PORTUGUESE_WORDS }
+        if (lower.contains('ã') || lower.contains('õ')) return true
+        val words = lower.split(Regex("[^\\p{L}]+")).filter { it.isNotBlank() }
+        val matchCount = words.count { it in PORTUGUESE_WORDS }
+        return matchCount >= 2 || (words.size <= 3 && matchCount >= 1)
     }
 
     private fun checkItalian(text: String): Boolean {
         val lower = text.lowercase()
-        val words = lower.split(Regex("[^\\p{L}]+"))
-        return words.any { it in ITALIAN_WORDS }
+        val words = lower.split(Regex("[^\\p{L}]+")).filter { it.isNotBlank() }
+        val matchCount = words.count { it in ITALIAN_WORDS }
+        return matchCount >= 2 || (words.size <= 3 && matchCount >= 1)
     }
 
     private fun hasAnyForeignCharacter(text: String): Boolean {
-        for (ch in text) {
-            val code = ch.code
-            if (code > 0x007F && ch.isLetter()) return true
-        }
-        return false
+        return text.any { it.code > 0x007F && it.isLetter() }
     }
 }

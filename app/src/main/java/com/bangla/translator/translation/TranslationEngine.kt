@@ -22,8 +22,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Multi-Language On-Device Translation Engine with Intelligent Pack Management.
  * Supports up to 3 simultaneous active language pairs with sub-millisecond detection,
- * automatic multilingual segment decomposition for mixed messages, and on-demand model
- * downloading to minimize phone RAM and storage consumption.
+ * automatic multilingual segment decomposition for mixed messages (French + Spanish, etc.),
+ * and on-demand model downloading to guarantee all parts of a multilingual message are translated.
  */
 object TranslationEngine {
     private const val TAG = "TranslationEngine"
@@ -33,8 +33,8 @@ object TranslationEngine {
         val detectedLanguages: List<String>
     )
 
-    // Thread pool for network translation fallback (max 3 concurrent requests)
-    private val networkExecutor = Executors.newFixedThreadPool(3)
+    // Cached thread pool allowing concurrent translation of multiple segments without starvation
+    private val translationExecutor = Executors.newCachedThreadPool()
 
     // Primary active source and target language
     private var currentSourceLang: String = TranslateLanguage.BENGALI
@@ -181,8 +181,7 @@ object TranslationEngine {
     }
 
     /**
-     * Purges downloaded ML Kit models that are no longer part of the user's active language pairs,
-     * freeing up phone storage (~30MB per pack) and releasing native memory buffers immediately.
+     * Purges downloaded ML Kit models that are no longer part of the user's active language pairs.
      */
     fun purgeInactiveModels(activeSourceCodes: Set<String>, onComplete: (() -> Unit)? = null) {
         val activeMlKitCodes = activeSourceCodes.map { SupportedLanguages.findByCode(it).mlKitCode }.toSet()
@@ -236,7 +235,8 @@ object TranslationEngine {
 
     /**
      * Advanced multilingual translation: splits message into segments, translates each
-     * segment in its native language, preserves forwarded headers, and returns details.
+     * segment in its native language (downloading models on-demand if needed), preserves
+     * forwarded headers, and returns combined translated text and detected languages.
      */
     fun translateWithDetails(
         text: String,
@@ -255,7 +255,7 @@ object TranslationEngine {
         val segments = LanguageDetector.splitMultilingualSegments(cleanText)
         val detectedLanguages = segments.mapNotNull { it.detectedLanguage }.distinct()
 
-        // Single language or monolithic message path
+        // Single language path
         if (detectedLanguages.size <= 1) {
             val effectiveSource = detectedLanguages.firstOrNull()
                 ?: sourceCode
@@ -269,7 +269,7 @@ object TranslationEngine {
         }
 
         // Multilingual message path: multiple distinct languages found in one message!
-        networkExecutor.execute {
+        translationExecutor.execute {
             try {
                 val translatedSegments = arrayOfNulls<String>(segments.size)
                 val latch = CountDownLatch(segments.size)
@@ -292,16 +292,25 @@ object TranslationEngine {
                             translatedSegments[index] = "${segment.prefix}${translatedPart}"
                             latch.countDown()
                         }, {
+                            // On failure, preserve segment
                             translatedSegments[index] = segment.rawSegment
                             latch.countDown()
                         })
                     }
                 }
 
-                // Wait up to 5 seconds for all segments to complete
-                latch.await(5, TimeUnit.SECONDS)
+                // Wait up to 6 seconds for all segments to complete
+                latch.await(6, TimeUnit.SECONDS)
 
-                val combined = translatedSegments.filterNotNull().joinToString("\n")
+                // Guarantee no segment is dropped: if translation timed out, preserve original segment
+                for (i in segments.indices) {
+                    if (translatedSegments[i] == null) {
+                        val seg = segments[i]
+                        translatedSegments[i] = "${seg.prefix}${seg.body}"
+                    }
+                }
+
+                val combined = translatedSegments.filterNotNull().joinToString("\n\n")
                 cache.put(cleanText, combined)
                 onSuccess(TranslationDetails(combined, detectedLanguages))
             } catch (e: Exception) {
@@ -313,6 +322,7 @@ object TranslationEngine {
 
     /**
      * Translates a single text chunk with cache, online fast path, and local ML Kit fallback.
+     * Automatically triggers on-demand ML Kit download if the pack is not yet ready.
      */
     private fun translateSingleChunk(
         cleanText: String,
@@ -328,7 +338,7 @@ object TranslationEngine {
             return
         }
 
-        networkExecutor.execute {
+        translationExecutor.execute {
             var translatedOnline: String? = null
             try {
                 translatedOnline = fetchOnlineTranslation(cleanText, sourceCode, targetCode)
@@ -343,11 +353,15 @@ object TranslationEngine {
                 return@execute
             }
 
-            // Fallback to local on-device ML Kit Translator
+            // Fallback to local on-device ML Kit Translator with automatic on-demand download
             translateOnDevice(cleanText, sourceCode, onSuccess, onFailure)
         }
     }
 
+    /**
+     * Performs translation via on-device ML Kit.
+     * Ensures the language model is downloaded before translating to prevent failure on secondary languages.
+     */
     private fun translateOnDevice(
         cleanText: String,
         sourceCode: String,
@@ -355,16 +369,25 @@ object TranslationEngine {
         onFailure: ((Exception) -> Unit)?
     ) {
         try {
-            val translator = getOrCreateTranslator(sourceCode)
-            translator.translate(cleanText)
-                .addOnSuccessListener { result ->
-                    val cacheKey = "$sourceCode:$cleanText"
-                    cache.put(cacheKey, result)
-                    cache.put(cleanText, result)
-                    onSuccess(result)
+            val srcMlKit = SupportedLanguages.findByCode(sourceCode).mlKitCode
+            val translator = getOrCreateTranslator(srcMlKit)
+
+            translator.downloadModelIfNeeded()
+                .addOnSuccessListener {
+                    translator.translate(cleanText)
+                        .addOnSuccessListener { result ->
+                            val cacheKey = "$sourceCode:$cleanText"
+                            cache.put(cacheKey, result)
+                            cache.put(cleanText, result)
+                            onSuccess(result)
+                        }
+                        .addOnFailureListener { error ->
+                            Log.w(TAG, "On-device ML Kit translation failed: ${error.message}")
+                            onFailure?.invoke(error) ?: onSuccess(cleanText)
+                        }
                 }
                 .addOnFailureListener { error ->
-                    Log.w(TAG, "On-device ML Kit translation failed: ${error.message}")
+                    Log.w(TAG, "ML Kit model download failed for $sourceCode: ${error.message}")
                     onFailure?.invoke(error) ?: onSuccess(cleanText)
                 }
         } catch (e: Exception) {
@@ -389,15 +412,22 @@ object TranslationEngine {
             if (responseCode == 200) {
                 val responseText = conn.inputStream.bufferedReader().use { it.readText() }
                 val jsonArray = org.json.JSONArray(responseText)
-                val sentences = jsonArray.getJSONArray(0)
-                val sb = StringBuilder()
-                for (i in 0 until sentences.length()) {
-                    val s = sentences.getJSONArray(i)
-                    sb.append(s.getString(0))
-                }
-                val translated = sb.toString().trim()
-                if (translated.isNotEmpty()) {
-                    return translated
+                val sentences = jsonArray.optJSONArray(0)
+                if (sentences != null) {
+                    val sb = StringBuilder()
+                    for (i in 0 until sentences.length()) {
+                        val s = sentences.optJSONArray(i)
+                        if (s != null) {
+                            val part = s.optString(0)
+                            if (!part.isNullOrEmpty() && part != "null") {
+                                sb.append(part)
+                            }
+                        }
+                    }
+                    val translated = sb.toString().trim()
+                    if (translated.isNotEmpty()) {
+                        return translated
+                    }
                 }
             }
         } finally {

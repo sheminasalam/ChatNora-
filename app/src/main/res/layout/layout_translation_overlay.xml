@@ -105,7 +105,8 @@
             android:scrollbars="vertical"
             android:fadeScrollbars="false"
             android:fillViewport="true"
-            android:overScrollMode="ifContentScrolls"
+            android:isScrollContainer="true"
+            android:overScrollMode="always"
             android:nestedScrollingEnabled="true">
 
             <TextView

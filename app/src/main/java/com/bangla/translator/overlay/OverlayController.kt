@@ -64,9 +64,6 @@ class OverlayController(
     // Key of the currently expanded overlay (null if all are collapsed)
     private var expandedDisplayKey: String? = null
 
-    // Transparent full-screen backdrop to dismiss when clicking anywhere on screen
-    private var dismissBackdropView: View? = null
-
     private val density = context.resources.displayMetrics.density
     private val marginPx = (HORIZONTAL_MARGIN_DP * density).toInt()
     private val gapPx = (ATTACHMENT_GAP_DP * density).toInt()
@@ -77,6 +74,52 @@ class OverlayController(
 
     private val autoCollapseRunnable = Runnable {
         collapseAll()
+    }
+
+    private fun adjustBadgeYToAvoidCollisions(
+        candidateY: Int,
+        badgeHeight: Int,
+        isOutgoing: Boolean,
+        currentKey: String,
+        targetBounds: Rect,
+        screenH: Int
+    ): Int {
+        var posY = candidateY
+        val minGap = (6 * density).toInt()
+
+        // Collect all other active badge vertical intervals on the same outgoing/incoming side
+        val occupiedIntervals = mutableListOf<Pair<Int, Int>>()
+        for ((key, other) in activeOverlays) {
+            if (key == currentKey) continue
+            if (key == expandedDisplayKey) continue
+            val otherRect = other.overlayScreenRect
+            if (otherRect.isEmpty) continue
+
+            val otherScreenW = other.lastScreenBounds.width()
+            val otherIsOutgoing = other.currentBounds.right > otherScreenW * 0.78f || other.currentBounds.left > otherScreenW * 0.40f
+            if (otherIsOutgoing == isOutgoing) {
+                occupiedIntervals.add(Pair(otherRect.top - minGap, otherRect.bottom + minGap))
+            }
+        }
+
+        // Iteratively resolve any vertical overlap until posY is completely clear
+        var attempts = 0
+        var hasOverlap = true
+        while (hasOverlap && attempts < 12) {
+            hasOverlap = false
+            attempts++
+            for ((start, end) in occupiedIntervals) {
+                val badgeBottom = posY + badgeHeight
+                if (posY < end && badgeBottom > start) {
+                    hasOverlap = true
+                    posY = end + (2 * density).toInt()
+                    break
+                }
+            }
+        }
+
+        val maxAllowedY = screenH - (navBarInsetPx + badgeHeight + (8 * density).toInt())
+        return posY.coerceIn(statusBarInsetPx, maxAllowedY.coerceAtLeast(statusBarInsetPx))
     }
 
     /**
@@ -155,6 +198,16 @@ class OverlayController(
                 collapseOverlay(displayKey)
             }
 
+            // Scroll container touch handling: allow smooth vertical scroll without closing bubble
+            svContainer?.setOnTouchListener { v, _ ->
+                v.parent?.requestDisallowInterceptTouchEvent(true)
+                false
+            }
+            tvTranslated.setOnTouchListener { v, _ ->
+                v.parent?.requestDisallowInterceptTouchEvent(true)
+                false
+            }
+
             val isExpanded = (displayKey == expandedDisplayKey)
             val isOtherExpanded = (expandedDisplayKey != null && !isExpanded)
 
@@ -230,8 +283,16 @@ class OverlayController(
                 if (calculatedX < marginPx) calculatedX = marginPx
                 posX = calculatedX
 
-                // Middle of the side of the bubble vertically!
-                posY = targetBounds.centerY() - (measuredHeight / 2)
+                // Middle of the side of the bubble vertically with collision avoidance
+                val candidateY = targetBounds.centerY() - (measuredHeight / 2)
+                posY = adjustBadgeYToAvoidCollisions(
+                    candidateY = candidateY,
+                    badgeHeight = measuredHeight,
+                    isOutgoing = isOutgoing,
+                    currentKey = displayKey,
+                    targetBounds = targetBounds,
+                    screenH = screenH
+                )
             }
 
             // Don't show if scrolled off screen
@@ -242,9 +303,16 @@ class OverlayController(
             val layoutParams = WindowManager.LayoutParams().apply {
                 type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
                 format = PixelFormat.TRANSLUCENT
-                flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                flags = if (isExpanded) {
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                            WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
+                            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                } else {
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                }
                 gravity = Gravity.TOP or Gravity.START
                 x = posX
                 y = posY
@@ -254,6 +322,15 @@ class OverlayController(
 
             if (isExpanded) {
                 overlayView.elevation = 24 * density
+            }
+
+            overlayView.setOnTouchListener { _, event ->
+                if (expandedDisplayKey == displayKey && event.action == android.view.MotionEvent.ACTION_OUTSIDE) {
+                    collapseAll()
+                    true
+                } else {
+                    false
+                }
             }
 
             try {
@@ -275,18 +352,12 @@ class OverlayController(
     }
 
     /**
-     * Expands a specific translation overlay:
-     * 1. Attaches a transparent full-screen backdrop so clicking ANYWHERE dismisses it.
-     * 2. Hides other collapsed badges so no icons cover the text.
-     * 3. Sets higher elevation on the expanded bubble.
+     * Expands a specific translation overlay.
      */
     fun expandOverlay(displayKey: String) {
         runOnMainThread {
             val previousKey = expandedDisplayKey
             expandedDisplayKey = displayKey
-
-            // Attach full-screen backdrop so clicking anywhere closes the expanded bubble
-            ensureDismissBackdropAttached()
 
             // Collapse previous if different
             if (previousKey != null && previousKey != displayKey) {
@@ -322,13 +393,11 @@ class OverlayController(
     }
 
     /**
-     * Automatically collapses all expanded overlays back to small icon badges
-     * and removes the full-screen dismiss backdrop.
+     * Automatically collapses all expanded overlays back to small icon badges.
      */
     fun collapseAll() {
         runOnMainThread {
             mainHandler.removeCallbacks(autoCollapseRunnable)
-            removeDismissBackdrop()
 
             val currentExpanded = expandedDisplayKey
             expandedDisplayKey = null
@@ -342,45 +411,6 @@ class OverlayController(
                 activeOverlays[currentExpanded]?.let { updateOverlayDisplayState(it, isExpanded = false) }
             }
         }
-    }
-
-    /**
-     * Creates and attaches a full-screen transparent view to intercept taps anywhere on screen.
-     */
-    private fun ensureDismissBackdropAttached() {
-        if (dismissBackdropView != null) return
-        val backdrop = View(context).apply {
-            setBackgroundColor(Color.TRANSPARENT)
-            isClickable = true
-            isFocusable = false
-            setOnClickListener {
-                collapseAll()
-            }
-        }
-        val lp = WindowManager.LayoutParams().apply {
-            type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
-            format = PixelFormat.TRANSLUCENT
-            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-            gravity = Gravity.TOP or Gravity.START
-            x = 0
-            y = 0
-            width = WindowManager.LayoutParams.MATCH_PARENT
-            height = WindowManager.LayoutParams.MATCH_PARENT
-        }
-        try {
-            windowManager.addView(backdrop, lp)
-            dismissBackdropView = backdrop
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to attach dismiss backdrop", e)
-        }
-    }
-
-    private fun removeDismissBackdrop() {
-        val backdrop = dismissBackdropView ?: return
-        dismissBackdropView = null
-        try {
-            windowManager.removeView(backdrop)
-        } catch (e: Exception) {}
     }
 
     private fun updateOverlayDisplayState(active: ActiveOverlay, isExpanded: Boolean) {
@@ -465,7 +495,15 @@ class OverlayController(
             if (calculatedX < marginPx) calculatedX = marginPx
             posX = calculatedX
 
-            posY = active.currentBounds.centerY() - (measuredHeight / 2)
+            val candidateY = active.currentBounds.centerY() - (measuredHeight / 2)
+            posY = adjustBadgeYToAvoidCollisions(
+                candidateY = candidateY,
+                badgeHeight = measuredHeight,
+                isOutgoing = isOutgoing,
+                currentKey = active.displayKey,
+                targetBounds = active.currentBounds,
+                screenH = screenH
+            )
             active.view.elevation = 2 * density
         }
 
@@ -473,6 +511,25 @@ class OverlayController(
         lp.y = posY
         lp.width = measuredWidth
         lp.height = WindowManager.LayoutParams.WRAP_CONTENT
+        lp.flags = if (isExpanded) {
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        } else {
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        }
+
+        active.view.setOnTouchListener { _, event ->
+            if (expandedDisplayKey == active.displayKey && event.action == android.view.MotionEvent.ACTION_OUTSIDE) {
+                collapseAll()
+                true
+            } else {
+                false
+            }
+        }
 
         try {
             windowManager.updateViewLayout(active.view, lp)
@@ -546,7 +603,6 @@ class OverlayController(
         runOnMainThread {
             if (expandedDisplayKey == displayKey) {
                 expandedDisplayKey = null
-                removeDismissBackdrop()
                 mainHandler.removeCallbacks(autoCollapseRunnable)
             }
             val removed = activeOverlays.remove(displayKey) ?: return@runOnMainThread
@@ -569,7 +625,6 @@ class OverlayController(
                 if (entry.key !in currentlyVisibleKeys) {
                     if (expandedDisplayKey == entry.key) {
                         expandedDisplayKey = null
-                        removeDismissBackdrop()
                         mainHandler.removeCallbacks(autoCollapseRunnable)
                     }
                     try {
@@ -589,7 +644,6 @@ class OverlayController(
     fun removeAllOverlays() {
         runOnMainThread {
             expandedDisplayKey = null
-            removeDismissBackdrop()
             dismissLanguageProposal()
             dismissDetectedLanguageBadge()
             mainHandler.removeCallbacks(autoCollapseRunnable)

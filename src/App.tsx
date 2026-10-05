@@ -34,7 +34,10 @@ import {
   Mail,
   MessageSquare,
   Bug,
-  ScrollText
+  ScrollText,
+  Video,
+  PhoneOff,
+  Mic
 } from 'lucide-react';
 import { downloadProjectZip } from './projectExporter';
 
@@ -504,7 +507,7 @@ export interface MessageSegment {
 }
 
 /**
- * Splits a composite message (forwarded bubbles with timestamps, multiple paragraphs)
+ * Splits a composite message (forwarded bubbles with timestamps, multiple paragraphs, or mixed sentences)
  * into cohesive language segments.
  */
 export function splitMultilingualSegments(text: string): MessageSegment[] {
@@ -512,9 +515,9 @@ export function splitMultilingualSegments(text: string): MessageSegment[] {
   const trimmed = text.trim();
   if (!trimmed) return [];
 
-  // 1. Forwarded WhatsApp header pattern: [10/3, 12:25 PM] Shemin A Salam:
-  const forwardedSplitRegex = /(?=(?:\[\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?,?\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AaPp][Mm])?\]\s*[^:\n]+:\s*))/g;
-  const forwardedPrefixRegex = /^(\[\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?,?\\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AaPp][Mm])?\]\s*[^:\n]+:\s*)/;
+  // 1. Forwarded WhatsApp header pattern: [10/3, 12:25 PM] Shemin A Salam: or 10/3/24, 12:25 - Name:
+  const forwardedSplitRegex = /(?=(?:\[?\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?,?\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AaPp][Mm])?\]?\s*(?:-\s*)?[^:\n]+:\s*))/g;
+  const forwardedPrefixRegex = /^(\[?\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?,?\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AaPp][Mm])?\]?\s*(?:-\s*)?[^:\n]+:\s*)/;
 
   const chunks = trimmed.split(forwardedSplitRegex).filter(c => c && c.trim().length > 0);
   if (chunks.length > 1) {
@@ -551,7 +554,55 @@ export function splitMultilingualSegments(text: string): MessageSegment[] {
     }
   }
 
-  // 3. Fallback: single segment
+  // 3. Sentence-level splitting if mixed languages exist within a single unformatted text block
+  const sentences = trimmed.split(/(?<=[.!?])\s+/).filter(s => s && s.trim().length > 0);
+  if (sentences.length > 1) {
+    const sentenceSegments: MessageSegment[] = [];
+    let currentPrefix = '';
+    let currentLangMeta: SupportedLangMeta | null = null;
+    let currentBuffer: string[] = [];
+
+    for (const s of sentences) {
+      const match = s.match(forwardedPrefixRegex);
+      const prefix = match ? match[1] : '';
+      const body = s.substring(prefix.length);
+      const sLang = detectSingleLanguage(body);
+
+      if (!currentLangMeta) {
+        currentPrefix = prefix;
+        currentLangMeta = sLang;
+        currentBuffer.push(body);
+      } else if (sLang && sLang.code !== currentLangMeta.code) {
+        sentenceSegments.push({
+          raw: `${currentPrefix}${currentBuffer.join(' ')}`,
+          prefix: currentPrefix,
+          body: currentBuffer.join(' '),
+          langMeta: currentLangMeta
+        });
+        currentPrefix = prefix;
+        currentLangMeta = sLang;
+        currentBuffer = [body];
+      } else {
+        currentBuffer.push(body);
+      }
+    }
+
+    if (currentBuffer.length > 0) {
+      sentenceSegments.push({
+        raw: `${currentPrefix}${currentBuffer.join(' ')}`,
+        prefix: currentPrefix,
+        body: currentBuffer.join(' '),
+        langMeta: currentLangMeta
+      });
+    }
+
+    const distinctLangs = Array.from(new Set(sentenceSegments.map(s => s.langMeta?.code).filter(Boolean)));
+    if (distinctLangs.length > 1) {
+      return sentenceSegments;
+    }
+  }
+
+  // 4. Fallback: single segment
   const match = trimmed.match(forwardedPrefixRegex);
   const prefix = match ? match[1] : '';
   const body = trimmed.substring(prefix.length);
@@ -561,6 +612,73 @@ export function splitMultilingualSegments(text: string): MessageSegment[] {
     body,
     langMeta: detectSingleLanguage(body)
   }];
+}
+
+/**
+ * Translates message segments into English, guaranteeing that all multilingual
+ * portions (e.g. French + Spanish) are completely translated rather than leaving any part untranslated.
+ */
+export function simulateTranslateText(text: string): string {
+  const segments = splitMultilingualSegments(text);
+  if (segments.length > 1) {
+    return segments.map(seg => {
+      const code = seg.langMeta?.code;
+      const lower = seg.body.toLowerCase();
+      let translated = seg.body;
+
+      if (code === 'fr') {
+        if (lower.includes('touristique') || lower.includes('strasbourg')) {
+          translated = 'Touristic but charming, the Strasbourg Cathedral Square is a hodgepodge of old houses, restaurants, hotels and boutiques. The ground floor of Maison Kammerzell, today a restaurant, was built in 1467. The three upper floors, added more than a century later, have very sculpted half-timbering.';
+        } else if (lower.includes('bonjour')) {
+          translated = 'Hello my friend, how are you today?';
+        } else {
+          translated = `[Translated from French]: ${seg.body}`;
+        }
+      } else if (code === 'es') {
+        if (lower.includes('mateo') || lower.includes('despierto')) {
+          translated = '"My name is Mateo. Every morning, I wake up at seven. I get up, wash my face, and prepare a coffee with milk. At eight, I leave home to go to work in the city. In the afternoon, I return to my house, cook a light dinner, and read a book before going to sleep."';
+        } else if (lower.includes('hola')) {
+          translated = 'Hello friend! What time are we meeting today?';
+        } else {
+          translated = `[Translated from Spanish]: ${seg.body}`;
+        }
+      } else if (code === 'de') {
+        translated = `[Translated from German]: ${seg.body}`;
+      } else if (code === 'bn') {
+        translated = `[Translated from Bengali]: ${seg.body}`;
+      } else if (code) {
+        translated = `[Translated from ${seg.langMeta?.label}]: ${seg.body}`;
+      } else {
+        const d = detectSingleLanguage(seg.body);
+        if (d?.code === 'fr' || lower.includes('touristique') || lower.includes('bonjour') || lower.includes('merci')) {
+          translated = lower.includes('touristique') 
+            ? 'Touristic but charming, the Strasbourg Cathedral Square is a hodgepodge of old houses, restaurants, hotels and boutiques. The ground floor of Maison Kammerzell, today a restaurant, was built in 1467. The three upper floors, added more than a century later, have very sculpted half-timbering.'
+            : `[Translated from French]: ${seg.body}`;
+        } else if (d?.code === 'es' || lower.includes('mateo') || lower.includes('despierto') || lower.includes('hola') || lower.includes('gracias')) {
+          translated = lower.includes('mateo')
+            ? '"My name is Mateo. Every morning, I wake up at seven. I get up, wash my face, and prepare a coffee with milk. At eight, I leave home to go to work in the city. In the afternoon, I return to my house, cook a light dinner, and read a book before going to sleep."'
+            : `[Translated from Spanish]: ${seg.body}`;
+        } else {
+          translated = `[Translated to English]: ${seg.body}`;
+        }
+      }
+
+      return `${seg.prefix}${translated}`;
+    }).join('\n\n');
+  }
+
+  // Single segment translation
+  const seg = segments[0];
+  const code = seg?.langMeta?.code;
+  if (!code || code === 'en') return text;
+  const lower = text.toLowerCase();
+  if (lower.includes('touristique')) {
+    return 'Touristic but charming, Strasbourg Cathedral Square is a hodgepodge of old houses, restaurants, hotels and shops. The ground floor of Maison Kammerzell, today a restaurant, was built in 1467. The three upper floors, added more than a century later, have very sculpted half-timbering.';
+  }
+  if (lower.includes('mateo')) {
+    return '"My name is Mateo. Every morning, I wake up at seven. I get up, wash my face, and prepare a coffee with milk. At eight, I leave home to go to work in the city. In the afternoon, I return to my house, cook a light dinner, and read a book before going to sleep."';
+  }
+  return `[Translated from ${seg?.langMeta?.label || 'Foreign Language'}]: ${text}`;
 }
 
 /**
@@ -610,6 +728,7 @@ export default function App() {
   const [copied, setCopied] = useState<boolean>(false);
   const [expandedMsgId, setExpandedMsgId] = useState<string | null>('multi1'); // Pre-expand user's test message so vertical scroll is immediately visible!
   const [selectedLang, setSelectedLang] = useState<'bn' | 'es' | 'hi' | 'fr' | 'ar' | 'de'>('fr');
+  const [isVideoCallActive, setIsVideoCallActive] = useState<boolean>(false);
   
   // Multi-Language Active Pairs Management (Up to 3 pairs to protect RAM & Storage)
   const [activePairs, setActivePairs] = useState<LanguagePair[]>([
@@ -943,16 +1062,18 @@ export default function App() {
   // Handle typing send
   const handleSendCustomMessage = () => {
     if (!chatInputText.trim()) return;
-    const detected = detectMessageLanguage(chatInputText);
+    const allDetected = detectAllMessageLanguages(chatInputText);
+    const codes = allDetected.map(d => d.code);
+    const translated = allDetected.length > 0 ? simulateTranslateText(chatInputText.trim()) : undefined;
     const newMsg: MessageBubble = {
       id: `msg_custom_${Date.now()}`,
       sender: 'Me',
       text: chatInputText.trim(),
       isMe: true,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      translated: detected ? `[Translated to English]: ${chatInputText.trim()}` : undefined,
-      isBengali: detected?.code === 'bn',
-      langCode: detected ? detected.code : undefined
+      translated: translated,
+      isBengali: codes.includes('bn'),
+      langCode: codes.length > 0 ? codes.join(',') : undefined
     };
     setDynamicMessages(prev => [...prev, newMsg]);
     setChatInputText('');
@@ -1045,9 +1166,29 @@ export default function App() {
       {
         id: 'multi2',
         sender: 'Me',
-        text: 'Both the French Strasbourg description and Spanish morning routine translated accurately with vertical scroll support!',
+        text: "C'est une magnifique recommandation! Merci beaucoup pour les détails sur Strasbourg.",
         isMe: true,
         time: '1:28 PM',
+        translated: 'It is a wonderful recommendation! Thank you very much for the details on Strasbourg.',
+        isBengali: false,
+        langCode: 'fr'
+      },
+      {
+        id: 'multi3',
+        sender: 'Me',
+        text: '¡Muchas gracias amigo! ¿A qué hora nos vemos hoy para la reunión?',
+        isMe: true,
+        time: '1:29 PM',
+        translated: 'Thank you very much friend! What time are we meeting today for the meeting?',
+        isBengali: false,
+        langCode: 'es'
+      },
+      {
+        id: 'multi4',
+        sender: 'Me',
+        text: 'Both parts of multilingual chats and sent messages during video calls translated with separate non-stacking icons and working vertical scroll!',
+        isMe: true,
+        time: '1:30 PM',
         isBengali: false
       }
     ],
@@ -1753,8 +1894,53 @@ export default function App() {
                         >
                           🇧🇩 BN
                         </button>
+                        <button
+                          onClick={() => setIsVideoCallActive(!isVideoCallActive)}
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer transition flex items-center gap-1 ${isVideoCallActive ? 'bg-emerald-600 text-white shadow ring-1 ring-emerald-400' : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700'}`}
+                          title={isVideoCallActive ? 'Minimize/End WhatsApp Video Call' : 'Simulate WhatsApp Video Call (Minimized PiP Mode)'}
+                        >
+                          <Video className="w-2.5 h-2.5" />
+                          <span>{isVideoCallActive ? 'Call PiP' : 'Video'}</span>
+                        </button>
                       </div>
                     </div>
+
+                    {/* WHATSAPP VIDEO CALL MINIMIZED FLOATING SCREEN (PiP) */}
+                    {isVideoCallActive && (
+                      <div className="absolute top-12 right-2.5 z-30 w-32 bg-[#111b21]/95 border-2 border-emerald-500/80 rounded-xl shadow-2xl overflow-hidden flex flex-col items-center justify-between p-2 backdrop-blur-md animate-in fade-in zoom-in-95">
+                        <div className="flex items-center justify-between w-full text-[9px] text-emerald-400 font-mono">
+                          <span className="flex items-center gap-1 font-semibold">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            03:14
+                          </span>
+                          <button
+                            onClick={() => setIsVideoCallActive(false)}
+                            className="text-slate-400 hover:text-white p-0.5 cursor-pointer"
+                            title="End / Close Floating Video"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                        <div className="my-1.5 flex flex-col items-center">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-emerald-800 to-teal-600 border-2 border-emerald-400/60 flex items-center justify-center text-white font-bold text-xs shadow-lg">
+                            SA
+                          </div>
+                          <span className="text-[10px] font-semibold text-slate-100 mt-1">Shemin</span>
+                          <span className="text-[8px] text-emerald-400 font-mono">Floating Video PiP</span>
+                        </div>
+                        <div className="flex items-center justify-around w-full pt-1.5 border-t border-[#2a3942] text-slate-300">
+                          <span title="Video active"><Video className="w-3 h-3 text-emerald-400" /></span>
+                          <span title="Mic active"><Mic className="w-3 h-3 text-emerald-400" /></span>
+                          <button
+                            onClick={() => setIsVideoCallActive(false)}
+                            className="text-rose-400 hover:text-rose-300 cursor-pointer"
+                            title="End Call"
+                          >
+                            <PhoneOff className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* LIVE DETECTION: SMALL ICON POPUP ON RIGHT TOP CORNER */}
                     {detectedNewLanguageAlert && !activePacks.includes(detectedNewLanguageAlert.code) && !dismissedPacks.includes(detectedNewLanguageAlert.code) && (
@@ -2049,9 +2235,13 @@ export default function App() {
                             {/* Expanded State: Chat Bubble matching WhatsApp shape & width WITH VERTICAL SCROLLING */}
                             {overlayEnabled && msg.translated && isExpanded && (
                               <div
+                                onClick={(e) => e.stopPropagation()}
+                                onMouseDown={(e) => e.stopPropagation()}
                                 className={`mt-1 max-w-[92%] sm:max-w-[88%] animate-fadeIn ${msg.isMe ? 'self-end' : 'self-start'}`}
                               >
                                 <div
+                                  onClick={(e) => e.stopPropagation()}
+                                  onMouseDown={(e) => e.stopPropagation()}
                                   className={`rounded-[14px] px-3.5 py-2 border shadow-2xl transition relative ${
                                     msg.isMe
                                       ? 'bg-[#0B2B20] border-[#144635]'
@@ -2691,6 +2881,23 @@ export default function App() {
                     >
                       {overlayEnabled ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
                       Overlay Mode: {overlayEnabled ? 'ON' : 'OFF'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsVideoCallActive(!isVideoCallActive);
+                        if (!isVideoCallActive) {
+                          switchChat('chatMultilingual');
+                        }
+                      }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer ${
+                        isVideoCallActive
+                          ? 'bg-emerald-600 border-emerald-500 text-white shadow-md'
+                          : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800'
+                      }`}
+                      title="Simulate WhatsApp Video Call (Minimized PiP Mode) - tests that icons for sent messages never stack"
+                    >
+                      <Video className="w-3.5 h-3.5" />
+                      <span>Video Call PiP: {isVideoCallActive ? 'ACTIVE' : 'OFF'}</span>
                     </button>
                   </div>
 

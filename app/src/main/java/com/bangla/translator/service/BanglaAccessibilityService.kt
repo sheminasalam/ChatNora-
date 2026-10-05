@@ -297,19 +297,12 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
         }
 
         val currentVisibleKeySet = HashSet<String>()
-        var hasNewMessageArrived = false
         for (msg in scannedMessages) {
-            if (!activeVisibleKeys.containsKey(msg.displayKey)) {
-                hasNewMessageArrived = true
-            }
             currentVisibleKeySet.add(msg.displayKey)
             activeVisibleKeys[msg.displayKey] = msg
         }
-
-        // Auto-collapse any expanded translation when a new message arrives
-        if (hasNewMessageArrived) {
-            overlayController.collapseAll()
-        }
+        // Prune off-screen keys so activeVisibleKeys precisely matches viewport
+        activeVisibleKeys.keys.retainAll(currentVisibleKeySet)
 
         // Remove overlays for messages that have scrolled away
         overlayController.reconcileVisibleOverlays(currentVisibleKeySet)

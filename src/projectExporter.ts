@@ -1364,7 +1364,8 @@ dependencies {
             android:scrollbars="vertical"
             android:fadeScrollbars="false"
             android:fillViewport="true"
-            android:overScrollMode="ifContentScrolls"
+            android:isScrollContainer="true"
+            android:overScrollMode="always"
             android:nestedScrollingEnabled="true">
 
             <TextView
@@ -1748,7 +1749,8 @@ import java.util.regex.Pattern
  * Universal language detector supporting 19+ languages on WhatsApp.
  * Combines ultra-fast (sub-millisecond) zero-CPU Unicode script filters
  * with Google ML Kit Language Identification for Romance/Latin languages.
- * Now features intelligent segment decomposition for multi-language single messages.
+ * Features intelligent segment decomposition for multi-language single messages
+ * (forwarded headers, paragraphs, and sentence boundaries).
  */
 object LanguageDetector {
 
@@ -1770,13 +1772,14 @@ object LanguageDetector {
         "^\\\\d{1,2}:\\\\d{2}$"
     )
 
-    // Forwarded message timestamp & author prefix regex: e.g. "[10/3, 12:25 PM] Shemin A Salam: "
+    // Forwarded message timestamp & author prefix regex:
+    // Matches e.g. "[10/3, 12:25 PM] Shemin A Salam: " or "10/3/24, 12:25 - Shemin A Salam: "
     private val FORWARDED_HEADER_SPLIT_REGEX = Regex(
-        "(?=(?:\\\\[\\\\d{1,2}[/.-]\\\\d{1,2}(?:[/.-]\\\\d{2,4})?,?\\\\s+\\\\d{1,2}:\\\\d{2}(?::\\\\d{2})?(?:\\\\s*[AaPp][Mm])?\\\\]\\\\s*[^:\\\\n]+:\\\\s*))"
+        "(?=(?:\\\\[?\\\\d{1,2}[/.-]\\\\d{1,2}(?:[/.-]\\\\d{2,4})?,?\\\\s+\\\\d{1,2}:\\\\d{2}(?::\\\\d{2})?(?:\\\\s*[AaPp][Mm])?\\\\]?\\\\s*(?:-\\\\s*)?[^:\\\\n]+:\\\\s*))"
     )
 
     private val FORWARDED_PREFIX_REGEX = Regex(
-        "^(\\\\[\\\\d{1,2}[/.-]\\\\d{1,2}(?:[/.-]\\\\d{2,4})?,?\\\\s+\\\\d{1,2}:\\\\d{2}(?::\\\\d{2})?(?:\\\\s*[AaPp][Mm])?\\\\]\\\\s*[^:\\\\n]+:\\\\s*)"
+        "^(\\\\[?\\\\d{1,2}[/.-]\\\\d{1,2}(?:[/.-]\\\\d{2,4})?,?\\\\s+\\\\d{1,2}:\\\\d{2}(?::\\\\d{2})?(?:\\\\s*[AaPp][Mm])?\\\\]?\\\\s*(?:-\\\\s*)?[^:\\\\n]+:\\\\s*)"
     )
 
     private val SPANISH_WORDS = setOf(
@@ -1787,7 +1790,8 @@ object LanguageDetector {
         "usted", "ustedes", "pedido", "documentos", "reunión", "me", "llamo",
         "cada", "mañana", "despierto", "siete", "levanto", "lavo", "cara",
         "preparo", "café", "leche", "ocho", "salgo", "ciudad", "regreso",
-        "cocino", "cena", "ligera", "leo", "libro", "dormir", "vida", "vida"
+        "cocino", "cena", "unacena", "ligera", "leo", "libro", "dormir", "vida",
+        "antes", "mateo", "para", "por", "las", "los", "del", "con", "una"
     )
 
     private val FRENCH_WORDS = setOf(
@@ -1799,12 +1803,13 @@ object LanguageDetector {
         "mon", "ami", "amie", "quand", "tout", "tous", "toute", "va", "vas", "pourquoi",
         "touristique", "charmante", "place", "cathédrale", "maisons", "anciennes", "restos",
         "hôtels", "boutiques", "rez-de-chaussée", "maison", "restaurant", "construit",
-        "étages", "supérieurs", "rajoutés", "siècle", "colombages", "sculptés"
+        "étages", "supérieurs", "rajoutés", "siècle", "colombages", "sculptés", "est",
+        "une", "méli-mélo", "strasbourg", "kammerzell", "sont"
     )
 
     private val GERMAN_WORDS = setOf(
         "hallo", "danke", "bitte", "nicht", "guten", "morgen", "abend", "alles",
-        "wie", "gehts", "oder", "auch", "noch", "nach", "zeit", "freund"
+        "wie", "gehts", "oder", "auch", "noch", "nach", "zeit", "freund", "treffen"
     )
 
     private val PORTUGUESE_WORDS = setOf(
@@ -1826,7 +1831,7 @@ object LanguageDetector {
     }
 
     /**
-     * Determines whether the given text is written in the specified source language.
+     * Determines whether the given text contains content written in the specified source language.
      */
     fun isTargetLanguageMessage(
         text: CharSequence?,
@@ -1872,8 +1877,10 @@ object LanguageDetector {
     }
 
     /**
-     * Splits a potentially multilingual message into cohesive segments (e.g. forwarded message blocks,
-     * separate paragraphs, or distinct sentences) and detects the language of each segment.
+     * Splits a potentially multilingual message into cohesive segments:
+     * 1. Forwarded headers with timestamps and names.
+     * 2. Paragraphs / newlines.
+     * 3. Sentence boundaries (when multiple languages exist in an unformatted block).
      */
     fun splitMultilingualSegments(text: String): List<TextSegment> {
         val trimmed = text.trim()
@@ -1882,7 +1889,7 @@ object LanguageDetector {
         // 1. Try splitting by forwarded message headers
         val forwardedChunks = trimmed.split(FORWARDED_HEADER_SPLIT_REGEX).filter { it.isNotBlank() }
         if (forwardedChunks.size > 1) {
-            return forwardedChunks.map { chunk ->
+            val segments = forwardedChunks.map { chunk ->
                 val prefixMatch = FORWARDED_PREFIX_REGEX.find(chunk)
                 val prefix = prefixMatch?.value ?: ""
                 val body = chunk.substring(prefix.length)
@@ -1892,6 +1899,10 @@ object LanguageDetector {
                     body = body,
                     detectedLanguage = detectSingleSegmentLanguage(body)
                 )
+            }
+            val distinctLangs = segments.mapNotNull { it.detectedLanguage }.distinct()
+            if (distinctLangs.size > 1) {
+                return segments
             }
         }
 
@@ -1915,7 +1926,59 @@ object LanguageDetector {
             }
         }
 
-        // 3. Fallback: single segment
+        // 3. Try splitting by sentence boundaries if multiple languages exist in one block
+        val sentences = trimmed.split(Regex("(?<=[.!?])\\\\s+")).filter { it.isNotBlank() }
+        if (sentences.size > 1) {
+            val sentenceSegments = mutableListOf<TextSegment>()
+            var currentPrefix = ""
+            var currentLang: String? = null
+            var currentBuffer = StringBuilder()
+
+            for (s in sentences) {
+                val prefixMatch = FORWARDED_PREFIX_REGEX.find(s)
+                val prefix = prefixMatch?.value ?: ""
+                val body = s.substring(prefix.length)
+                val sLang = detectSingleSegmentLanguage(body)
+
+                if (currentLang == null) {
+                    currentPrefix = prefix
+                    currentLang = sLang
+                    currentBuffer.append(body)
+                } else if (sLang != null && sLang != currentLang) {
+                    sentenceSegments.add(
+                        TextSegment(
+                            rawSegment = "$currentPrefix$currentBuffer",
+                            prefix = currentPrefix,
+                            body = currentBuffer.toString(),
+                            detectedLanguage = currentLang
+                        )
+                    )
+                    currentPrefix = prefix
+                    currentLang = sLang
+                    currentBuffer = StringBuilder(body)
+                } else {
+                    currentBuffer.append(" ").append(body)
+                }
+            }
+
+            if (currentBuffer.isNotEmpty()) {
+                sentenceSegments.add(
+                    TextSegment(
+                        rawSegment = "$currentPrefix$currentBuffer",
+                        prefix = currentPrefix,
+                        body = currentBuffer.toString(),
+                        detectedLanguage = currentLang
+                    )
+                )
+            }
+
+            val distinctSentenceLangs = sentenceSegments.mapNotNull { it.detectedLanguage }.distinct()
+            if (distinctSentenceLangs.size > 1) {
+                return sentenceSegments
+            }
+        }
+
+        // 4. Fallback: single segment
         val prefixMatch = FORWARDED_PREFIX_REGEX.find(trimmed)
         val prefix = prefixMatch?.value ?: ""
         val body = trimmed.substring(prefix.length)
@@ -1935,12 +1998,14 @@ object LanguageDetector {
     fun detectAllLanguages(text: CharSequence?): List<String> {
         if (text.isNullOrBlank()) return emptyList()
         val segments = splitMultilingualSegments(text.toString())
-        return segments.mapNotNull { it.detectedLanguage }.distinct()
+        val langs = segments.mapNotNull { it.detectedLanguage }.distinct()
+        if (langs.isNotEmpty()) return langs
+        val single = detectSingleSegmentLanguage(text.toString())
+        return if (single != null) listOf(single) else emptyList()
     }
 
     /**
-     * Detects what foreign language the message is written in (returns language code like 'bn', 'es', 'ar', etc.).
-     * Returns null if English, numbers, or unrecognizable.
+     * Detects what foreign language the message is written in.
      */
     fun detectLanguage(text: CharSequence?): String? {
         if (text.isNullOrBlank()) return null
@@ -1977,6 +2042,18 @@ object LanguageDetector {
         if (checkGerman(trimmed)) return "de"
         if (checkPortuguese(trimmed)) return "pt"
         if (checkItalian(trimmed)) return "it"
+
+        // 3. Google ML Kit On-Device Language Identification fallback for Latin/multilingual texts
+        try {
+            val identifier = mlKitLanguageIdentifier
+            if (identifier != null && trimmed.length >= 6) {
+                val task = identifier.identifyLanguage(trimmed)
+                val lang = com.google.android.gms.tasks.Tasks.await(task, 400, java.util.concurrent.TimeUnit.MILLISECONDS)
+                if (!lang.isNullOrBlank() && lang != "und" && lang.length == 2) {
+                    return lang.lowercase()
+                }
+            }
+        } catch (e: Exception) {}
 
         return null
     }
@@ -2015,46 +2092,45 @@ object LanguageDetector {
 
     private fun checkSpanish(text: String): Boolean {
         val lower = text.lowercase()
-        // Distinctive Spanish characters (exclude 'é' and 'ü' which are shared with French/German)
-        if (lower.any { it in "ñáíóú¿¡" }) return true
-        val words = lower.split(Regex("[^\\\\p{L}]+"))
-        return words.any { it in SPANISH_WORDS }
+        if (lower.contains('ñ') || lower.contains('¿') || lower.contains('¡')) return true
+        val words = lower.split(Regex("[^\\\\p{L}]+")).filter { it.isNotBlank() }
+        val matchCount = words.count { it in SPANISH_WORDS }
+        return matchCount >= 2 || (words.size <= 3 && matchCount >= 1)
     }
 
     private fun checkFrench(text: String): Boolean {
         val lower = text.lowercase()
-        // Distinctive French characters
-        if (lower.any { it in "çœæèêëàâùûîïô" }) return true
-        val words = lower.split(Regex("[^\\\\p{L}]+"))
-        return words.any { it in FRENCH_WORDS }
+        if (lower.contains('œ') || lower.contains('æ') || lower.contains("c'est") || lower.contains("j'ai") || lower.contains("d'un")) return true
+        val words = lower.split(Regex("[^\\\\p{L}]+")).filter { it.isNotBlank() }
+        val matchCount = words.count { it in FRENCH_WORDS }
+        return matchCount >= 2 || (words.size <= 3 && matchCount >= 1)
     }
 
     private fun checkGerman(text: String): Boolean {
         val lower = text.lowercase()
-        if (lower.any { it in "äöüß" }) return true
-        val words = lower.split(Regex("[^\\\\p{L}]+"))
-        return words.any { it in GERMAN_WORDS }
+        if (lower.contains('ß') || lower.contains('ä') || lower.contains('ö') || lower.contains('ü')) return true
+        val words = lower.split(Regex("[^\\\\p{L}]+")).filter { it.isNotBlank() }
+        val matchCount = words.count { it in GERMAN_WORDS }
+        return matchCount >= 2 || (words.size <= 3 && matchCount >= 1)
     }
 
     private fun checkPortuguese(text: String): Boolean {
         val lower = text.lowercase()
-        if (lower.any { it in "ãõçáéíóúâêô" }) return true
-        val words = lower.split(Regex("[^\\\\p{L}]+"))
-        return words.any { it in PORTUGUESE_WORDS }
+        if (lower.contains('ã') || lower.contains('õ')) return true
+        val words = lower.split(Regex("[^\\\\p{L}]+")).filter { it.isNotBlank() }
+        val matchCount = words.count { it in PORTUGUESE_WORDS }
+        return matchCount >= 2 || (words.size <= 3 && matchCount >= 1)
     }
 
     private fun checkItalian(text: String): Boolean {
         val lower = text.lowercase()
-        val words = lower.split(Regex("[^\\\\p{L}]+"))
-        return words.any { it in ITALIAN_WORDS }
+        val words = lower.split(Regex("[^\\\\p{L}]+")).filter { it.isNotBlank() }
+        val matchCount = words.count { it in ITALIAN_WORDS }
+        return matchCount >= 2 || (words.size <= 3 && matchCount >= 1)
     }
 
     private fun hasAnyForeignCharacter(text: String): Boolean {
-        for (ch in text) {
-            val code = ch.code
-            if (code > 0x007F && ch.isLetter()) return true
-        }
-        return false
+        return text.any { it.code > 0x007F && it.isLetter() }
     }
 }
 `,
@@ -2162,8 +2238,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Multi-Language On-Device Translation Engine with Intelligent Pack Management.
  * Supports up to 3 simultaneous active language pairs with sub-millisecond detection,
- * automatic multilingual segment decomposition for mixed messages, and on-demand model
- * downloading to minimize phone RAM and storage consumption.
+ * automatic multilingual segment decomposition for mixed messages (French + Spanish, etc.),
+ * and on-demand model downloading to guarantee all parts of a multilingual message are translated.
  */
 object TranslationEngine {
     private const val TAG = "TranslationEngine"
@@ -2173,8 +2249,8 @@ object TranslationEngine {
         val detectedLanguages: List<String>
     )
 
-    // Thread pool for network translation fallback (max 3 concurrent requests)
-    private val networkExecutor = Executors.newFixedThreadPool(3)
+    // Cached thread pool allowing concurrent translation of multiple segments without starvation
+    private val translationExecutor = Executors.newCachedThreadPool()
 
     // Primary active source and target language
     private var currentSourceLang: String = TranslateLanguage.BENGALI
@@ -2321,8 +2397,7 @@ object TranslationEngine {
     }
 
     /**
-     * Purges downloaded ML Kit models that are no longer part of the user's active language pairs,
-     * freeing up phone storage (~30MB per pack) and releasing native memory buffers immediately.
+     * Purges downloaded ML Kit models that are no longer part of the user's active language pairs.
      */
     fun purgeInactiveModels(activeSourceCodes: Set<String>, onComplete: (() -> Unit)? = null) {
         val activeMlKitCodes = activeSourceCodes.map { SupportedLanguages.findByCode(it).mlKitCode }.toSet()
@@ -2376,7 +2451,8 @@ object TranslationEngine {
 
     /**
      * Advanced multilingual translation: splits message into segments, translates each
-     * segment in its native language, preserves forwarded headers, and returns details.
+     * segment in its native language (downloading models on-demand if needed), preserves
+     * forwarded headers, and returns combined translated text and detected languages.
      */
     fun translateWithDetails(
         text: String,
@@ -2395,7 +2471,7 @@ object TranslationEngine {
         val segments = LanguageDetector.splitMultilingualSegments(cleanText)
         val detectedLanguages = segments.mapNotNull { it.detectedLanguage }.distinct()
 
-        // Single language or monolithic message path
+        // Single language path
         if (detectedLanguages.size <= 1) {
             val effectiveSource = detectedLanguages.firstOrNull()
                 ?: sourceCode
@@ -2409,7 +2485,7 @@ object TranslationEngine {
         }
 
         // Multilingual message path: multiple distinct languages found in one message!
-        networkExecutor.execute {
+        translationExecutor.execute {
             try {
                 val translatedSegments = arrayOfNulls<String>(segments.size)
                 val latch = CountDownLatch(segments.size)
@@ -2432,16 +2508,25 @@ object TranslationEngine {
                             translatedSegments[index] = "\${segment.prefix}\${translatedPart}"
                             latch.countDown()
                         }, {
+                            // On failure, preserve segment
                             translatedSegments[index] = segment.rawSegment
                             latch.countDown()
                         })
                     }
                 }
 
-                // Wait up to 5 seconds for all segments to complete
-                latch.await(5, TimeUnit.SECONDS)
+                // Wait up to 6 seconds for all segments to complete
+                latch.await(6, TimeUnit.SECONDS)
 
-                val combined = translatedSegments.filterNotNull().joinToString("\\n")
+                // Guarantee no segment is dropped: if translation timed out, preserve original segment
+                for (i in segments.indices) {
+                    if (translatedSegments[i] == null) {
+                        val seg = segments[i]
+                        translatedSegments[i] = "\${seg.prefix}\${seg.body}"
+                    }
+                }
+
+                val combined = translatedSegments.filterNotNull().joinToString("\\n\\n")
                 cache.put(cleanText, combined)
                 onSuccess(TranslationDetails(combined, detectedLanguages))
             } catch (e: Exception) {
@@ -2453,6 +2538,7 @@ object TranslationEngine {
 
     /**
      * Translates a single text chunk with cache, online fast path, and local ML Kit fallback.
+     * Automatically triggers on-demand ML Kit download if the pack is not yet ready.
      */
     private fun translateSingleChunk(
         cleanText: String,
@@ -2468,7 +2554,7 @@ object TranslationEngine {
             return
         }
 
-        networkExecutor.execute {
+        translationExecutor.execute {
             var translatedOnline: String? = null
             try {
                 translatedOnline = fetchOnlineTranslation(cleanText, sourceCode, targetCode)
@@ -2483,11 +2569,15 @@ object TranslationEngine {
                 return@execute
             }
 
-            // Fallback to local on-device ML Kit Translator
+            // Fallback to local on-device ML Kit Translator with automatic on-demand download
             translateOnDevice(cleanText, sourceCode, onSuccess, onFailure)
         }
     }
 
+    /**
+     * Performs translation via on-device ML Kit.
+     * Ensures the language model is downloaded before translating to prevent failure on secondary languages.
+     */
     private fun translateOnDevice(
         cleanText: String,
         sourceCode: String,
@@ -2495,16 +2585,25 @@ object TranslationEngine {
         onFailure: ((Exception) -> Unit)?
     ) {
         try {
-            val translator = getOrCreateTranslator(sourceCode)
-            translator.translate(cleanText)
-                .addOnSuccessListener { result ->
-                    val cacheKey = "$sourceCode:$cleanText"
-                    cache.put(cacheKey, result)
-                    cache.put(cleanText, result)
-                    onSuccess(result)
+            val srcMlKit = SupportedLanguages.findByCode(sourceCode).mlKitCode
+            val translator = getOrCreateTranslator(srcMlKit)
+
+            translator.downloadModelIfNeeded()
+                .addOnSuccessListener {
+                    translator.translate(cleanText)
+                        .addOnSuccessListener { result ->
+                            val cacheKey = "$sourceCode:$cleanText"
+                            cache.put(cacheKey, result)
+                            cache.put(cleanText, result)
+                            onSuccess(result)
+                        }
+                        .addOnFailureListener { error ->
+                            Log.w(TAG, "On-device ML Kit translation failed: \${error.message}")
+                            onFailure?.invoke(error) ?: onSuccess(cleanText)
+                        }
                 }
                 .addOnFailureListener { error ->
-                    Log.w(TAG, "On-device ML Kit translation failed: \${error.message}")
+                    Log.w(TAG, "ML Kit model download failed for $sourceCode: \${error.message}")
                     onFailure?.invoke(error) ?: onSuccess(cleanText)
                 }
         } catch (e: Exception) {
@@ -2529,15 +2628,22 @@ object TranslationEngine {
             if (responseCode == 200) {
                 val responseText = conn.inputStream.bufferedReader().use { it.readText() }
                 val jsonArray = org.json.JSONArray(responseText)
-                val sentences = jsonArray.getJSONArray(0)
-                val sb = StringBuilder()
-                for (i in 0 until sentences.length()) {
-                    val s = sentences.getJSONArray(i)
-                    sb.append(s.getString(0))
-                }
-                val translated = sb.toString().trim()
-                if (translated.isNotEmpty()) {
-                    return translated
+                val sentences = jsonArray.optJSONArray(0)
+                if (sentences != null) {
+                    val sb = StringBuilder()
+                    for (i in 0 until sentences.length()) {
+                        val s = sentences.optJSONArray(i)
+                        if (s != null) {
+                            val part = s.optString(0)
+                            if (!part.isNullOrEmpty() && part != "null") {
+                                sb.append(part)
+                            }
+                        }
+                    }
+                    val translated = sb.toString().trim()
+                    if (translated.isNotEmpty()) {
+                        return translated
+                    }
                 }
             }
         } finally {
@@ -2568,6 +2674,8 @@ data class ScanResult(
 /**
  * High-performance WhatsApp message scanner supporting multiple simultaneous active language packs (up to 3)
  * with on-the-fly detection of new foreign languages in chats.
+ * Engineered to accurately map individual message bubble boundaries even during floating Picture-in-Picture (PiP)
+ * video calls without collapsing or stacking badges over one another.
  */
 class WhatsAppMessageScanner(
     private val activeSourceLanguages: Set<String> = setOf("bn"),
@@ -2592,7 +2700,8 @@ class WhatsAppMessageScanner(
             "online", "typing...", "recording audio...", "last seen", "swipe to reply"
         )
         private val ACTION_BUTTONS = setOf(
-            "call", "pay", "search", "attach", "send", "voice message", "back", "more options"
+            "call", "pay", "search", "attach", "send", "voice message", "back", "more options",
+            "end call", "mute", "video on", "video off", "switch camera", "whatsapp call"
         )
     }
 
@@ -2626,6 +2735,8 @@ class WhatsAppMessageScanner(
         val pBounds = Rect()
         var visitedNodesCount = 0
         val maxNodesToTraverse = 600
+
+        val maxAllowedBubbleWidth = (screenBounds.width() * 0.88f).toInt()
 
         try {
             while (!queue.isEmpty() && visitedNodesCount < maxNodesToTraverse && results.size < 50) {
@@ -2690,16 +2801,27 @@ class WhatsAppMessageScanner(
                                     if (matchedLang != null) {
                                         val bubbleBounds = Rect(tempBounds)
 
+                                        // Strict parent traversal: never allow parent expansion to capture
+                                        // the entire chat container or RecyclerView (which causes all icons to stack
+                                        // at the same centerY during video calls / PiP mode!)
+                                        val maxAllowedBubbleHeight = tempBounds.height() + (screenBounds.height() * 0.15f).toInt().coerceAtMost(160)
+
                                         var currentParent: AccessibilityNodeInfo? = node.parent
                                         var depth = 0
                                         try {
                                             while (currentParent != null && depth < 3) {
                                                 currentParent.getBoundsInScreen(pBounds)
-                                                if (pBounds.width() in (tempBounds.width() + 4)..screenBounds.width() &&
-                                                    pBounds.height() >= tempBounds.height() &&
-                                                    pBounds.height() <= (screenBounds.height() * 0.75f).toInt()
+                                                val pWidth = pBounds.width()
+                                                val pHeight = pBounds.height()
+
+                                                if (pWidth in (tempBounds.width() + 4)..maxAllowedBubbleWidth &&
+                                                    pHeight >= tempBounds.height() &&
+                                                    pHeight <= maxAllowedBubbleHeight
                                                 ) {
                                                     bubbleBounds.set(pBounds)
+                                                } else if (pWidth > maxAllowedBubbleWidth || pHeight > maxAllowedBubbleHeight) {
+                                                    // Reached parent container / RecyclerView - STOP immediately!
+                                                    break
                                                 }
                                                 val nextParent = currentParent.parent
                                                 if (currentParent != node) currentParent.recycle()
@@ -2713,13 +2835,14 @@ class WhatsAppMessageScanner(
 
                                         val isOutgoing = bubbleBounds.right > screenBounds.width() * 0.78f || bubbleBounds.left > screenBounds.width() * 0.40f
                                         val isIncoming = !isOutgoing
-                                        val yBucket = bubbleBounds.top / 80
-                                        val displayKey = "msg_\${sessionGeneration}_\${normalized.hashCode()}_\${if (isIncoming) "in" else "out"}_b$yBucket"
+                                        // Stable key using occurrence count: maintains overlay identity when chat scrolls smoothly
+                                        val occurrenceIndex = results.count { it.normalizedText == normalized }
+                                        val displayKey = "msg_\${sessionGeneration}_\${normalized.hashCode()}_\${if (isIncoming) "in" else "out"}_occ$occurrenceIndex"
 
                                         val isDuplicate = results.any { existing ->
                                             existing.normalizedText == normalized &&
-                                                    Math.abs(existing.bounds.top - bubbleBounds.top) < 40 &&
-                                                    Math.abs(existing.bounds.left - bubbleBounds.left) < 60
+                                                    Math.abs(existing.bounds.top - bubbleBounds.top) < 24 &&
+                                                    Math.abs(existing.bounds.left - bubbleBounds.left) < 40
                                         }
 
                                         if (!isDuplicate) {
@@ -2806,11 +2929,23 @@ class WhatsAppMessageScanner(
         if (SYSTEM_NOTICE_PATTERNS.any { lower.contains(it) }) return true
 
         val resId = node.viewIdResourceName?.lowercase() ?: ""
+        val clsName = node.className?.toString()?.lowercase() ?: ""
         if (resId.contains("conversation_contact_name") ||
             resId.contains("conversation_title") ||
             resId.contains("toolbar") ||
             resId.contains("action_bar") ||
-            resId.contains("tab_title")
+            resId.contains("tab_title") ||
+            resId.contains("pip") ||
+            resId.contains("call") ||
+            resId.contains("video_container") ||
+            resId.contains("voip") ||
+            resId.contains("floating") ||
+            resId.contains("call_avatar") ||
+            resId.contains("mini_call") ||
+            clsName.contains("surfaceview") ||
+            clsName.contains("textureview") ||
+            clsName.contains("pip") ||
+            clsName.contains("voip")
         ) {
             return true
         }
@@ -2886,9 +3021,6 @@ class OverlayController(
     // Key of the currently expanded overlay (null if all are collapsed)
     private var expandedDisplayKey: String? = null
 
-    // Transparent full-screen backdrop to dismiss when clicking anywhere on screen
-    private var dismissBackdropView: View? = null
-
     private val density = context.resources.displayMetrics.density
     private val marginPx = (HORIZONTAL_MARGIN_DP * density).toInt()
     private val gapPx = (ATTACHMENT_GAP_DP * density).toInt()
@@ -2899,6 +3031,52 @@ class OverlayController(
 
     private val autoCollapseRunnable = Runnable {
         collapseAll()
+    }
+
+    private fun adjustBadgeYToAvoidCollisions(
+        candidateY: Int,
+        badgeHeight: Int,
+        isOutgoing: Boolean,
+        currentKey: String,
+        targetBounds: Rect,
+        screenH: Int
+    ): Int {
+        var posY = candidateY
+        val minGap = (6 * density).toInt()
+
+        // Collect all other active badge vertical intervals on the same outgoing/incoming side
+        val occupiedIntervals = mutableListOf<Pair<Int, Int>>()
+        for ((key, other) in activeOverlays) {
+            if (key == currentKey) continue
+            if (key == expandedDisplayKey) continue
+            val otherRect = other.overlayScreenRect
+            if (otherRect.isEmpty) continue
+
+            val otherScreenW = other.lastScreenBounds.width()
+            val otherIsOutgoing = other.currentBounds.right > otherScreenW * 0.78f || other.currentBounds.left > otherScreenW * 0.40f
+            if (otherIsOutgoing == isOutgoing) {
+                occupiedIntervals.add(Pair(otherRect.top - minGap, otherRect.bottom + minGap))
+            }
+        }
+
+        // Iteratively resolve any vertical overlap until posY is completely clear
+        var attempts = 0
+        var hasOverlap = true
+        while (hasOverlap && attempts < 12) {
+            hasOverlap = false
+            attempts++
+            for ((start, end) in occupiedIntervals) {
+                val badgeBottom = posY + badgeHeight
+                if (posY < end && badgeBottom > start) {
+                    hasOverlap = true
+                    posY = end + (2 * density).toInt()
+                    break
+                }
+            }
+        }
+
+        val maxAllowedY = screenH - (navBarInsetPx + badgeHeight + (8 * density).toInt())
+        return posY.coerceIn(statusBarInsetPx, maxAllowedY.coerceAtLeast(statusBarInsetPx))
     }
 
     /**
@@ -2977,6 +3155,16 @@ class OverlayController(
                 collapseOverlay(displayKey)
             }
 
+            // Scroll container touch handling: allow smooth vertical scroll without closing bubble
+            svContainer?.setOnTouchListener { v, _ ->
+                v.parent?.requestDisallowInterceptTouchEvent(true)
+                false
+            }
+            tvTranslated.setOnTouchListener { v, _ ->
+                v.parent?.requestDisallowInterceptTouchEvent(true)
+                false
+            }
+
             val isExpanded = (displayKey == expandedDisplayKey)
             val isOtherExpanded = (expandedDisplayKey != null && !isExpanded)
 
@@ -3052,8 +3240,16 @@ class OverlayController(
                 if (calculatedX < marginPx) calculatedX = marginPx
                 posX = calculatedX
 
-                // Middle of the side of the bubble vertically!
-                posY = targetBounds.centerY() - (measuredHeight / 2)
+                // Middle of the side of the bubble vertically with collision avoidance
+                val candidateY = targetBounds.centerY() - (measuredHeight / 2)
+                posY = adjustBadgeYToAvoidCollisions(
+                    candidateY = candidateY,
+                    badgeHeight = measuredHeight,
+                    isOutgoing = isOutgoing,
+                    currentKey = displayKey,
+                    targetBounds = targetBounds,
+                    screenH = screenH
+                )
             }
 
             // Don't show if scrolled off screen
@@ -3064,9 +3260,16 @@ class OverlayController(
             val layoutParams = WindowManager.LayoutParams().apply {
                 type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
                 format = PixelFormat.TRANSLUCENT
-                flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                flags = if (isExpanded) {
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                            WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
+                            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                } else {
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                }
                 gravity = Gravity.TOP or Gravity.START
                 x = posX
                 y = posY
@@ -3076,6 +3279,15 @@ class OverlayController(
 
             if (isExpanded) {
                 overlayView.elevation = 24 * density
+            }
+
+            overlayView.setOnTouchListener { _, event ->
+                if (expandedDisplayKey == displayKey && event.action == android.view.MotionEvent.ACTION_OUTSIDE) {
+                    collapseAll()
+                    true
+                } else {
+                    false
+                }
             }
 
             try {
@@ -3097,18 +3309,12 @@ class OverlayController(
     }
 
     /**
-     * Expands a specific translation overlay:
-     * 1. Attaches a transparent full-screen backdrop so clicking ANYWHERE dismisses it.
-     * 2. Hides other collapsed badges so no icons cover the text.
-     * 3. Sets higher elevation on the expanded bubble.
+     * Expands a specific translation overlay.
      */
     fun expandOverlay(displayKey: String) {
         runOnMainThread {
             val previousKey = expandedDisplayKey
             expandedDisplayKey = displayKey
-
-            // Attach full-screen backdrop so clicking anywhere closes the expanded bubble
-            ensureDismissBackdropAttached()
 
             // Collapse previous if different
             if (previousKey != null && previousKey != displayKey) {
@@ -3144,13 +3350,11 @@ class OverlayController(
     }
 
     /**
-     * Automatically collapses all expanded overlays back to small icon badges
-     * and removes the full-screen dismiss backdrop.
+     * Automatically collapses all expanded overlays back to small icon badges.
      */
     fun collapseAll() {
         runOnMainThread {
             mainHandler.removeCallbacks(autoCollapseRunnable)
-            removeDismissBackdrop()
 
             val currentExpanded = expandedDisplayKey
             expandedDisplayKey = null
@@ -3164,45 +3368,6 @@ class OverlayController(
                 activeOverlays[currentExpanded]?.let { updateOverlayDisplayState(it, isExpanded = false) }
             }
         }
-    }
-
-    /**
-     * Creates and attaches a full-screen transparent view to intercept taps anywhere on screen.
-     */
-    private fun ensureDismissBackdropAttached() {
-        if (dismissBackdropView != null) return
-        val backdrop = View(context).apply {
-            setBackgroundColor(Color.TRANSPARENT)
-            isClickable = true
-            isFocusable = false
-            setOnClickListener {
-                collapseAll()
-            }
-        }
-        val lp = WindowManager.LayoutParams().apply {
-            type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
-            format = PixelFormat.TRANSLUCENT
-            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-            gravity = Gravity.TOP or Gravity.START
-            x = 0
-            y = 0
-            width = WindowManager.LayoutParams.MATCH_PARENT
-            height = WindowManager.LayoutParams.MATCH_PARENT
-        }
-        try {
-            windowManager.addView(backdrop, lp)
-            dismissBackdropView = backdrop
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to attach dismiss backdrop", e)
-        }
-    }
-
-    private fun removeDismissBackdrop() {
-        val backdrop = dismissBackdropView ?: return
-        dismissBackdropView = null
-        try {
-            windowManager.removeView(backdrop)
-        } catch (e: Exception) {}
     }
 
     private fun updateOverlayDisplayState(active: ActiveOverlay, isExpanded: Boolean) {
@@ -3287,7 +3452,15 @@ class OverlayController(
             if (calculatedX < marginPx) calculatedX = marginPx
             posX = calculatedX
 
-            posY = active.currentBounds.centerY() - (measuredHeight / 2)
+            val candidateY = active.currentBounds.centerY() - (measuredHeight / 2)
+            posY = adjustBadgeYToAvoidCollisions(
+                candidateY = candidateY,
+                badgeHeight = measuredHeight,
+                isOutgoing = isOutgoing,
+                currentKey = active.displayKey,
+                targetBounds = active.currentBounds,
+                screenH = screenH
+            )
             active.view.elevation = 2 * density
         }
 
@@ -3295,6 +3468,25 @@ class OverlayController(
         lp.y = posY
         lp.width = measuredWidth
         lp.height = WindowManager.LayoutParams.WRAP_CONTENT
+        lp.flags = if (isExpanded) {
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        } else {
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        }
+
+        active.view.setOnTouchListener { _, event ->
+            if (expandedDisplayKey == active.displayKey && event.action == android.view.MotionEvent.ACTION_OUTSIDE) {
+                collapseAll()
+                true
+            } else {
+                false
+            }
+        }
 
         try {
             windowManager.updateViewLayout(active.view, lp)
@@ -3368,7 +3560,6 @@ class OverlayController(
         runOnMainThread {
             if (expandedDisplayKey == displayKey) {
                 expandedDisplayKey = null
-                removeDismissBackdrop()
                 mainHandler.removeCallbacks(autoCollapseRunnable)
             }
             val removed = activeOverlays.remove(displayKey) ?: return@runOnMainThread
@@ -3391,7 +3582,6 @@ class OverlayController(
                 if (entry.key !in currentlyVisibleKeys) {
                     if (expandedDisplayKey == entry.key) {
                         expandedDisplayKey = null
-                        removeDismissBackdrop()
                         mainHandler.removeCallbacks(autoCollapseRunnable)
                     }
                     try {
@@ -3411,7 +3601,6 @@ class OverlayController(
     fun removeAllOverlays() {
         runOnMainThread {
             expandedDisplayKey = null
-            removeDismissBackdrop()
             dismissLanguageProposal()
             dismissDetectedLanguageBadge()
             mainHandler.removeCallbacks(autoCollapseRunnable)
@@ -4004,19 +4193,12 @@ class BanglaAccessibilityService : AccessibilityService(), SharedPreferences.OnS
         }
 
         val currentVisibleKeySet = HashSet<String>()
-        var hasNewMessageArrived = false
         for (msg in scannedMessages) {
-            if (!activeVisibleKeys.containsKey(msg.displayKey)) {
-                hasNewMessageArrived = true
-            }
             currentVisibleKeySet.add(msg.displayKey)
             activeVisibleKeys[msg.displayKey] = msg
         }
-
-        // Auto-collapse any expanded translation when a new message arrives
-        if (hasNewMessageArrived) {
-            overlayController.collapseAll()
-        }
+        // Prune off-screen keys so activeVisibleKeys precisely matches viewport
+        activeVisibleKeys.keys.retainAll(currentVisibleKeySet)
 
         // Remove overlays for messages that have scrolled away
         overlayController.reconcileVisibleOverlays(currentVisibleKeySet)
